@@ -28,5 +28,9 @@
         <members>*</members>
         <name>CustomObject</name>
     </types>
+    <types>
+        <members>*</members>
+        <name>CustomNotificationType</name>
+    </types>
     <version>67.0</version>
 </Package>
