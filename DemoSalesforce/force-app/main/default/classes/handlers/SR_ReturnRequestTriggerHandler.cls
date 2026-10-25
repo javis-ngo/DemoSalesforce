@@ -22,7 +22,13 @@ public with sharing class SR_ReturnRequestTriggerHandler {
     }
 
     public static void afterInsert(List<Return_Request__c> newRecords) {
-        List<Return_Request_History__c> histories = new List<Return_Request_History__c>();
+        if (newRecords == null || newRecords.isEmpty()) {
+            return;
+        }
+
+        List<Return_Request_History__c> histories =
+            new List<Return_Request_History__c>();
+
         for (Return_Request__c requestRecord : newRecords) {
             histories.add(new Return_Request_History__c(
                 Return_Request__c = requestRecord.Id,
@@ -33,8 +39,32 @@ public with sharing class SR_ReturnRequestTriggerHandler {
                 Note__c = 'Initial status'
             ));
         }
-        if (!histories.isEmpty()) {
-            insert histories;
+
+        List<Database.SaveResult> results = Database.insert(
+            histories,
+            false,
+            AccessLevel.SYSTEM_MODE
+        );
+
+        List<String> failures = new List<String>();
+        for (Integer index = 0; index < results.size(); index++) {
+            if (results[index].isSuccess()) {
+                continue;
+            }
+            for (Database.Error errorValue : results[index].getErrors()) {
+                failures.add(
+                    'History row=' + index
+                    + ' status=' + String.valueOf(errorValue.getStatusCode())
+                    + ' fields=' + String.valueOf(errorValue.getFields())
+                    + ' message=' + errorValue.getMessage()
+                );
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new SR_ReturnRequestException(
+                String.join(failures, '\n')
+            );
         }
     }
 
@@ -50,4 +80,7 @@ public with sharing class SR_ReturnRequestTriggerHandler {
     static void resetAuthorization() {
         authorizedStatusUpdateIds.clear();
     }
+
+    public class SR_ReturnRequestException extends Exception {}
+
 }

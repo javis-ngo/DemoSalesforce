@@ -429,7 +429,7 @@ public with sharing class SR_ReturnRequestService {
         preview.riskFlag = item.risk;
         preview.channel = item.input.channel;
         preview.storeId = item.storeRow.Id;
-        item.route = SR_ApprovalService.previewLevel(preview);
+        item.route = SR_ApprovalService.previewLevel(preview, item.storeRow);
         if (item.route == null || item.route.success != true) {
             addError(
                 item.result,
@@ -439,17 +439,29 @@ public with sharing class SR_ReturnRequestService {
             );
             return;
         }
+                
+        Boolean pendingApproval =
+            item.route.targetStatus == SR_StatusMachine.PENDING_APPROVAL;
+        Datetime submittedAt = pendingApproval ? System.now() : null;
+
         item.requestRow = new Return_Request__c(
             Account__c = accountId,
             Order__c = item.orderRow.Id,
             Store__c = item.storeRow.Id,
             Channel__c = item.input.channel,
-            External_Request_Id__c = String.isBlank(item.input.externalRequestId) ? null : item.input.externalRequestId.trim(),
+            External_Request_Id__c = String.isBlank(item.input.externalRequestId)
+                ? null
+                : item.input.externalRequestId.trim(),
             Status__c = SR_StatusMachine.STATUS_NEW,
             Approval_Level__c = item.route.approvalLevel,
             Assigned_Approver__c = item.route.assignedApproverId,
+            Submitted_At__c = submittedAt,
+            Approval_Due_At__c = pendingApproval
+                ? submittedAt.addHours(SR_Config.approvalSlaHours())
+                : null,
             Version_Token__c = SR_Correlation.newId()
         );
+
     }
 
     private static void validateAndBuildLines(WorkItem item, Map<Id, Decimal> persistedReserved, Map<Id, Decimal> inBatchReserved) {

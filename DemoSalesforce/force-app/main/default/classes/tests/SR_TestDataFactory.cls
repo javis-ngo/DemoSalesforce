@@ -4,12 +4,12 @@
  *  - Factory không chứa nghiệp vụ (không tự tính tiền hoàn, không định tuyến duyệt): giá trị đến từ tham số.
  *  - Refund_Rate__c là kiểu Percent: truyền 80 nghĩa là 80%.
  *  - Tạo User là DML thiết lập (setup): factory bọc trong System.runAs để không gây MIXED_DML_OPERATION.
+ *  - Mọi DML tạo dữ liệu test chạy explicit SYSTEM_MODE; business identity được test qua System.runAs.
  *  - Org dev có ít license: factory ưu tiên profile 'Standard Platform User', rồi 'Standard User'
  *    (xem PROFILE_PREFERENCE). Mỗi user test vẫn tốn 1 license, nên giữ số user mỗi test nhỏ.
  */
 @IsTest
 public with sharing class SR_TestDataFactory {
-
     // ---- Vai trò (Phụ lục / DUC-08) và permission set tương ứng ----
     public static final String ROLE_STORE_STAFF      = 'STORE_STAFF';
     public static final String ROLE_STORE_MANAGER    = 'STORE_MANAGER';
@@ -18,7 +18,6 @@ public with sharing class SR_TestDataFactory {
     public static final String ROLE_CSKH             = 'CSKH';
     public static final String ROLE_ADMIN            = 'ADMIN';
     public static final String ROLE_INTEGRATION      = 'INTEGRATION';
-
     private static final Map<String, String> PERMISSION_SET_BY_ROLE = new Map<String, String>{
         ROLE_STORE_STAFF      => 'SR_Store_Staff',
         ROLE_STORE_MANAGER    => 'SR_Store_Manager',
@@ -28,19 +27,16 @@ public with sharing class SR_TestDataFactory {
         ROLE_ADMIN            => 'SR_Admin',
         ROLE_INTEGRATION      => 'SR_Integration_API'
     };
-
     /** Thứ tự ưu tiên profile cho user test (license Salesforce của org dev đã hết chỗ). */
     @TestVisible
     private static final List<String> PROFILE_PREFERENCE = new List<String>{
-        'Standard Platform User', 'Standard User'
+        'System Administrator', 'Standard Platform User', 'Standard User'
     };
-
     // ---- Vùng (API value của Store__c.Region__c; label tiếng Việt là Bắc / Trung / Nam) ----
     public static final String REGION_NORTH   = 'North';
     public static final String REGION_CENTRAL = 'Central';
     public static final String REGION_SOUTH   = 'South';
     private static final Set<String> REGIONS = new Set<String>{ REGION_NORTH, REGION_CENTRAL, REGION_SOUTH };
-
     // ---- Ngành hàng (Product2.Family, B.1) ----
     public static final String FAMILY_PHONE     = 'Điện thoại';
     public static final String FAMILY_LAPTOP    = 'Laptop';
@@ -48,13 +44,11 @@ public with sharing class SR_TestDataFactory {
     public static final String FAMILY_ACCESSORY = 'Phụ kiện';
     public static final String FAMILY_PREPAID   = 'Thẻ cào';
     public static final String FAMILY_SOFTWARE  = 'Phần mềm';
-
     // ---- Kênh và trạng thái yêu cầu (Phụ lục C / E) ----
     public static final String CHANNEL_COUNTER = 'COUNTER';
     public static final String CHANNEL_POS     = 'POS';
     public static final String CHANNEL_APP     = 'APP';
     private static final Set<String> CHANNELS = new Set<String>{ CHANNEL_COUNTER, CHANNEL_POS, CHANNEL_APP };
-
     public static final String STATUS_NEW               = 'NEW';
     public static final String STATUS_PENDING_APPROVAL  = 'PENDING_APPROVAL';
     public static final String STATUS_AWAITING_GOODS    = 'AWAITING_GOODS';
@@ -68,27 +62,17 @@ public with sharing class SR_TestDataFactory {
         STATUS_NEW, STATUS_PENDING_APPROVAL, STATUS_AWAITING_GOODS, STATUS_INSPECTING,
         STATUS_REFUND_PROCESSING, STATUS_COMPLETED, STATUS_REFUND_FAILED, STATUS_REJECTED, STATUS_CANCELLED
     };
-
     private static final String ORDER_STATUS_DRAFT     = 'Draft';
     private static final String ORDER_STATUS_ACTIVATED = 'Activated';
-
     private static Integer sequence = 0;
     private static Map<Id, PricebookEntry> standardEntryByProductId = new Map<Id, PricebookEntry>();
-
     private static Integer nextSequence() {
         sequence++;
         return sequence;
     }
-
-    // =====================================================================
-    // Dòng 40 – Người dùng theo vai trò
-    // =====================================================================
-
-    /** Tạo và insert 1 user theo vai trò; storeCode có thể null (ví dụ QLV, Kế toán). */
     public static User createUser(String role, String storeCode) {
         return createUsers(role, storeCode, 1, true)[0];
     }
-
     /**
      * Tạo count user cùng vai trò. doInsert = true: insert, rồi gán permission set của vai trò
      * nếu permission set đó đã có trong org (chưa có thì bỏ qua, không lỗi).
@@ -110,23 +94,24 @@ public with sharing class SR_TestDataFactory {
         }
         return users;
     }
-
     /** Tên permission set (DUC-08) mà vai trò được gán khi permission set đó đã tồn tại trong org. */
     public static String permissionSetNameFor(String role) {
         validateRole(role);
         return PERMISSION_SET_BY_ROLE.get(role);
     }
-
     private static void validateRole(String role) {
         if (role == null || !PERMISSION_SET_BY_ROLE.containsKey(role)) {
             throw new IllegalArgumentException('SR_TestDataFactory: vai trò không hợp lệ: ' + role);
         }
     }
-
     private static Id resolveProfileId() {
         Map<String, Id> idByName = new Map<String, Id>();
-        for (Profile p : [SELECT Id, Name FROM Profile WHERE Name IN :PROFILE_PREFERENCE]) {
-            idByName.put(p.Name, p.Id);
+        for (Profile profileValue : [
+            SELECT Id, Name
+            FROM Profile
+            WHERE Name IN :PROFILE_PREFERENCE
+        ]) {
+            idByName.put(profileValue.Name, profileValue.Id);
         }
         for (String name : PROFILE_PREFERENCE) {
             if (idByName.containsKey(name)) {
@@ -135,7 +120,6 @@ public with sharing class SR_TestDataFactory {
         }
         return UserInfo.getProfileId();
     }
-
     private static User buildUser(String role, String storeCode, Id profileId) {
         Integer n = nextSequence();
         String randomSuffix = EncodingUtil.convertToHex(Crypto.generateAesKey(128)).substring(0, 12);
@@ -153,43 +137,94 @@ public with sharing class SR_TestDataFactory {
             Store_Code__c     = storeCode
         );
     }
-
     /** DML thiết lập (User, PermissionSetAssignment) nằm trong runAs riêng để tránh MIXED_DML_OPERATION. */
     private static void saveUsers(List<User> users, List<String> roles) {
         System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert users;
-            assignPermissionSets(users, roles);
+            List<Database.SaveResult> userResults = Database.insert(
+                users,
+                false,
+                AccessLevel.SYSTEM_MODE
+            );
+            assertSetupDmlSucceeded('User insert', userResults);
+            assignRolePermissionSetsIfPresent(users, roles);
         }
     }
 
-    private static void assignPermissionSets(List<User> users, List<String> roles) {
+    private static void assignRolePermissionSetsIfPresent(
+        List<User> users,
+        List<String> roles
+    ) {
         Set<String> names = new Set<String>();
         for (String role : roles) {
             names.add(PERMISSION_SET_BY_ROLE.get(role));
         }
+
         Map<String, Id> idByName = new Map<String, Id>();
-        for (PermissionSet ps : [SELECT Id, Name FROM PermissionSet WHERE Name IN :names]) {
-            idByName.put(ps.Name, ps.Id);
+        for (PermissionSet permissionValue : [
+            SELECT Id, Name, IsOwnedByProfile
+            FROM PermissionSet
+            WHERE Name IN :names
+              AND IsOwnedByProfile = false
+        ]) {
+            idByName.put(permissionValue.Name, permissionValue.Id);
         }
-        List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
+
+        List<PermissionSetAssignment> assignments =
+            new List<PermissionSetAssignment>();
         for (Integer i = 0; i < users.size(); i++) {
-            Id permissionSetId = idByName.get(PERMISSION_SET_BY_ROLE.get(roles[i]));
+            Id permissionSetId = idByName.get(
+                PERMISSION_SET_BY_ROLE.get(roles[i])
+            );
             if (permissionSetId != null) {
                 assignments.add(new PermissionSetAssignment(
-                    AssigneeId      = users[i].Id,
+                    AssigneeId = users[i].Id,
                     PermissionSetId = permissionSetId
                 ));
             }
         }
+
         if (!assignments.isEmpty()) {
-            insert assignments;
+            assertSetupDmlSucceeded(
+                'PermissionSetAssignment insert',
+                Database.insert(
+                    assignments,
+                    false,
+                    AccessLevel.SYSTEM_MODE
+                )
+            );
         }
     }
-
+    /**
+     * Produces a useful failure message for every factory DML operation, including
+     * validation rules, duplicate values, unavailable licenses and automation errors.
+     */
+    private static void assertSetupDmlSucceeded(
+        String operation,
+        List<Database.SaveResult> results
+    ) {
+        List<String> failures = new List<String>();
+        for (Integer rowIndex = 0; rowIndex < results.size(); rowIndex++) {
+            Database.SaveResult result = results[rowIndex];
+            if (result.isSuccess()) {
+                continue;
+            }
+            for (Database.Error errorValue : result.getErrors()) {
+                failures.add(
+                    operation
+                    + ' row=' + rowIndex
+                    + ' status=' + String.valueOf(errorValue.getStatusCode())
+                    + ' fields=' + String.valueOf(errorValue.getFields())
+                    + ' message=' + errorValue.getMessage()
+                );
+            }
+        }
+        if (!failures.isEmpty()) {
+            Assert.fail(String.join(failures, '\\\\\\\\n'));
+        }
+    }
     // =====================================================================
     // Dòng 40 – Store kèm CHT và QLV
     // =====================================================================
-
     /** Kết quả của createStoreSetup: cửa hàng cùng các user liên quan. */
     public class StoreSetup {
         public Store__c store;
@@ -197,12 +232,10 @@ public with sharing class SR_TestDataFactory {
         public User regionalManager;  // QLV
         public User staff;            // Nhân viên cửa hàng
     }
-
     /** Tạo cửa hàng không kèm user (dùng khi chỉ cần Store__c, tiết kiệm license). */
     public static Store__c createStore(String storeCode, String region) {
         return createStore(storeCode, region, null, null);
     }
-
     public static Store__c createStore(String storeCode, String region, Id storeManagerId, Id regionalManagerId) {
         if (!REGIONS.contains(region)) {
             throw new IllegalArgumentException('SR_TestDataFactory: vùng không hợp lệ: ' + region);
@@ -214,15 +247,20 @@ public with sharing class SR_TestDataFactory {
             Store_Manager__c    = storeManagerId,
             Regional_Manager__c = regionalManagerId
         );
-        insert store;
+        assertSetupDmlSucceeded(
+            'Store__c insert',
+            Database.insert(
+                new List<Store__c>{ store },
+                false,
+                AccessLevel.SYSTEM_MODE
+            )
+        );
         return store;
     }
-
     /** Cửa hàng + CHT + QLV mới + 1 nhân viên cửa hàng (3 user). */
     public static StoreSetup createStoreSetup(String storeCode, String region) {
         return createStoreSetup(storeCode, region, null);
     }
-
     /**
      * Như trên nhưng dùng lại QLV đã có (nhiều cửa hàng cùng vùng dùng chung 1 QLV);
      * regionalManager = null thì tạo QLV mới. Chỉ tạo CHT và nhân viên cửa hàng (2 user).
@@ -242,7 +280,6 @@ public with sharing class SR_TestDataFactory {
             roles.add(ROLE_REGIONAL_MANAGER);
         }
         saveUsers(users, roles);
-
         StoreSetup result = new StoreSetup();
         result.storeManager = users[0];
         result.staff = users[1];
@@ -250,11 +287,9 @@ public with sharing class SR_TestDataFactory {
         result.store = createStore(storeCode, region, result.storeManager.Id, result.regionalManager.Id);
         return result;
     }
-
     // =====================================================================
     // Dòng 40 – Account có SĐT
     // =====================================================================
-
     /** Tạo count khách hàng, mỗi người một SĐT duy nhất (10 số, bắt đầu 090). */
     public static List<Account> createAccounts(Integer count, Boolean riskFlag, Boolean doInsert) {
         if (count == null || count < 1) {
@@ -266,18 +301,26 @@ public with sharing class SR_TestDataFactory {
             accounts.add(buildAccount('SR Test Customer ' + n, buildPhone(n), riskFlag));
         }
         if (doInsert == true) {
-            insert accounts;
+            assertSetupDmlSucceeded(
+                'Account insert',
+                Database.insert(accounts, false, AccessLevel.SYSTEM_MODE)
+            );
         }
         return accounts;
     }
-
     /** Tạo và insert 1 khách hàng với tên và SĐT chỉ định. */
     public static Account createAccount(String name, String phone, Boolean riskFlag) {
         Account account = buildAccount(name, phone, riskFlag);
-        insert account;
+        assertSetupDmlSucceeded(
+            'Account insert',
+            Database.insert(
+                new List<Account>{ account },
+                false,
+                AccessLevel.SYSTEM_MODE
+            )
+        );
         return account;
     }
-
     private static Account buildAccount(String name, String phone, Boolean riskFlag) {
         Boolean flagged = riskFlag == true;
         return new Account(
@@ -287,22 +330,18 @@ public with sharing class SR_TestDataFactory {
             Risk_Flag_Updated_At__c = flagged ? Datetime.now() : null
         );
     }
-
     private static String buildPhone(Integer n) {
         return '090' + String.valueOf(n).leftPad(7, '0');
     }
-
     // =====================================================================
     // Dòng 40 – Product2 đủ 6 ngành hàng + PricebookEntry
     // =====================================================================
-
     /** Mô tả một sản phẩm cần tạo. */
     public class ProductSeed {
         public String family;
         public String sku;
         public String name;
         public Decimal price;
-
         public ProductSeed(String family, String sku, String name, Decimal price) {
             this.family = family;
             this.sku = sku;
@@ -310,7 +349,6 @@ public with sharing class SR_TestDataFactory {
             this.price = price;
         }
     }
-
     /** Mỗi ngành hàng một sản phẩm; SKU/giá lấy theo ví dụ trong BRD (nồi chiên, thẻ cào, laptop 25 triệu...). */
     public static List<ProductSeed> defaultCatalogSeeds() {
         return new List<ProductSeed>{
@@ -322,7 +360,6 @@ public with sharing class SR_TestDataFactory {
             new ProductSeed(FAMILY_SOFTWARE,  'SW-OF-001',  'Phần mềm văn phòng',   1500000)
         };
     }
-
     /** Tạo đủ 6 ngành hàng (kèm PricebookEntry trong Standard Pricebook). Trả về theo Family. */
     public static Map<String, Product2> createProductCatalog() {
         Map<String, Product2> productByFamily = new Map<String, Product2>();
@@ -331,11 +368,9 @@ public with sharing class SR_TestDataFactory {
         }
         return productByFamily;
     }
-
     public static Product2 createProduct(String family, String sku, String name, Decimal price) {
         return createProducts(new List<ProductSeed>{ new ProductSeed(family, sku, name, price) })[0];
     }
-
     /** Hàng loạt: 1 DML cho Product2, 1 DML cho PricebookEntry. */
     public static List<Product2> createProducts(List<ProductSeed> seeds) {
         if (seeds == null || seeds.isEmpty()) {
@@ -351,8 +386,10 @@ public with sharing class SR_TestDataFactory {
                 IsActive         = true
             ));
         }
-        insert products;
-
+        assertSetupDmlSucceeded(
+            'Product2 insert',
+            Database.insert(products, false, AccessLevel.SYSTEM_MODE)
+        );
         Id standardPricebookId = Test.getStandardPricebookId();
         List<PricebookEntry> entries = new List<PricebookEntry>();
         for (Integer i = 0; i < products.size(); i++) {
@@ -363,34 +400,32 @@ public with sharing class SR_TestDataFactory {
                 IsActive     = true
             ));
         }
-        insert entries;
+        assertSetupDmlSucceeded(
+            'PricebookEntry insert',
+            Database.insert(entries, false, AccessLevel.SYSTEM_MODE)
+        );
         for (PricebookEntry entry : entries) {
             standardEntryByProductId.put(entry.Product2Id, entry);
         }
         return products;
     }
-
     // =====================================================================
     // Dòng 40 – Order + OrderItem (ngày giao tùy chọn)
     // =====================================================================
-
     /** Một dòng sản phẩm của đơn. unitPrice = null thì lấy giá trong Standard Pricebook. */
     public class ItemSpec {
         public Id productId;
         public Decimal quantity = 1;
         public Decimal unitPrice;
-
         public ItemSpec(Id productId, Decimal quantity) {
             this.productId = productId;
             this.quantity = quantity;
         }
-
         public ItemSpec(Id productId, Decimal quantity, Decimal unitPrice) {
             this(productId, quantity);
             this.unitPrice = unitPrice;
         }
     }
-
     /**
      * Mô tả một đơn hàng. deliveryDate = null tạo đơn không có ngày giao (mua mang về tại quầy – OI-03).
      */
@@ -401,17 +436,14 @@ public with sharing class SR_TestDataFactory {
         public Date deliveryDate;
         public String paymentMethod = 'Cash';
         public List<ItemSpec> items = new List<ItemSpec>();
-
         public OrderSpec(Id accountId, Id storeId) {
             this.accountId = accountId;
             this.storeId = storeId;
         }
     }
-
     public static Order createOrder(OrderSpec spec) {
         return createOrders(new List<OrderSpec>{ spec })[0];
     }
-
     /**
      * Tạo hàng loạt đơn: insert Order ở Draft → insert OrderItem → chuyển Activated
      * (Salesforce chỉ cho thêm dòng khi đơn còn Draft). Tổng cộng 3 DML.
@@ -437,7 +469,6 @@ public with sharing class SR_TestDataFactory {
         }
         Map<Id, PricebookEntry> entryByProductId = resolveStandardEntries(productIds);
         Id standardPricebookId = Test.getStandardPricebookId();
-
         List<Order> orders = new List<Order>();
         for (OrderSpec spec : specs) {
             orders.add(new Order(
@@ -450,8 +481,10 @@ public with sharing class SR_TestDataFactory {
                 Payment_Method__c = spec.paymentMethod
             ));
         }
-        insert orders;
-
+        assertSetupDmlSucceeded(
+            'Order insert',
+            Database.insert(orders, false, AccessLevel.SYSTEM_MODE)
+        );
         List<OrderItem> orderItems = new List<OrderItem>();
         for (Integer i = 0; i < specs.size(); i++) {
             for (ItemSpec item : specs[i].items) {
@@ -465,15 +498,19 @@ public with sharing class SR_TestDataFactory {
                 ));
             }
         }
-        insert orderItems;
-
+        assertSetupDmlSucceeded(
+            'OrderItem insert',
+            Database.insert(orderItems, false, AccessLevel.SYSTEM_MODE)
+        );
         for (Order ord : orders) {
             ord.Status = ORDER_STATUS_ACTIVATED;
         }
-        update orders;
+        assertSetupDmlSucceeded(
+            'Order activation update',
+            Database.update(orders, false, AccessLevel.SYSTEM_MODE)
+        );
         return orders;
     }
-
     /** PricebookEntry trong Standard Pricebook của các sản phẩm; chỉ query phần chưa có trong cache. */
     private static Map<Id, PricebookEntry> resolveStandardEntries(Set<Id> productIds) {
         Set<Id> missing = new Set<Id>();
@@ -504,11 +541,9 @@ public with sharing class SR_TestDataFactory {
         }
         return result;
     }
-
     // =====================================================================
     // Dòng 40 – Yêu cầu đổi trả ở trạng thái bất kỳ
     // =====================================================================
-
     /**
      * Một dòng yêu cầu. Giá trị mặc định chỉ để insert được; test nào cần số liệu cụ thể thì tự đặt.
      * refundRate theo đơn vị phần trăm (80 = 80%).
@@ -527,7 +562,6 @@ public with sharing class SR_TestDataFactory {
         public String inspectionResult = 'NOT_INSPECTED';
         public String inspectionNote;
     }
-
     public class RequestSpec {
         public Id accountId;
         public Id orderId;
@@ -544,7 +578,6 @@ public with sharing class SR_TestDataFactory {
         public String rejectionReason;
         public List<LineSpec> lines = new List<LineSpec>();
     }
-
     /**
      * Dựng sẵn RequestSpec cho từng đơn: mỗi OrderItem của đơn thành 1 dòng (SL 1, đơn giá của dòng đơn).
      * 1 SOQL cho tất cả đơn. Đơn truyền vào phải là Order do createOrders trả về (có AccountId, Store__c).
@@ -562,7 +595,6 @@ public with sharing class SR_TestDataFactory {
             }
             itemsByOrderId.get(item.OrderId).add(item);
         }
-
         List<RequestSpec> specs = new List<RequestSpec>();
         for (Order ord : orders) {
             RequestSpec spec = new RequestSpec();
@@ -585,11 +617,9 @@ public with sharing class SR_TestDataFactory {
         }
         return specs;
     }
-
     public static Return_Request__c createReturnRequest(RequestSpec spec) {
         return createReturnRequests(new List<RequestSpec>{ spec })[0];
     }
-
     /**
      * Tạo hàng loạt yêu cầu và các dòng của chúng (2 DML). Status__c được ghi thẳng khi insert,
      * nên các giá trị ngoài NEW cần picklist Status__c đã có đủ 9 trạng thái (xem DUNG-02) và,
@@ -633,8 +663,10 @@ public with sharing class SR_TestDataFactory {
             }
             requests.add(request);
         }
-        insert requests;
-
+        assertSetupDmlSucceeded(
+            'Return_Request__c insert',
+            Database.insert(requests, false, AccessLevel.SYSTEM_MODE)
+        );
         List<Return_Request_Line__c> lines = new List<Return_Request_Line__c>();
         for (Integer i = 0; i < specs.size(); i++) {
             for (LineSpec line : specs[i].lines) {
@@ -656,15 +688,16 @@ public with sharing class SR_TestDataFactory {
             }
         }
         if (!lines.isEmpty()) {
-            insert lines;
+            assertSetupDmlSucceeded(
+                'Return_Request_Line__c insert',
+                Database.insert(lines, false, AccessLevel.SYSTEM_MODE)
+            );
         }
         return requests;
     }
-
     // =====================================================================
     // Dòng 41 – Ghi đè cấu hình cho test qua SR_Config
     // =====================================================================
-
     /**
      * Ghi đè một tham số của SR_Setting__mdt trong test hiện tại, không cần deploy metadata.
      * Ví dụ: SR_TestDataFactory.overrideConfig(SR_Setting__mdt.Enable_PayHub__c, false);
@@ -672,7 +705,6 @@ public with sharing class SR_TestDataFactory {
     public static void overrideConfig(Schema.SObjectField field, Object value) {
         SR_Config.setOverride(field, value);
     }
-
     /** Bỏ mọi giá trị ghi đè; tham số quay về giá trị trong Custom Metadata. */
     public static void resetConfig() {
         SR_Config.clearOverrides();
@@ -680,7 +712,6 @@ public with sharing class SR_TestDataFactory {
         SR_Config.setRefundRateOverrides(null);
         SR_Config.clearCache();
     }
-
     /**
      * Cấu hình tối thiểu để test DUC-04 không phụ thuộc bản ghi Custom Metadata trên org.
      */

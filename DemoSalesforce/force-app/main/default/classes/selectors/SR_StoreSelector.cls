@@ -14,11 +14,24 @@ public inherited sharing class SR_StoreSelector {
     }
 
     public static Map<Id, Store__c> selectByIds(Set<Id> storeIds) {
-        if (storeIds == null || storeIds.isEmpty()) return new Map<Id, Store__c>();
-        return new Map<Id, Store__c>([
-            SELECT Id, Name, Store_Code__c, Store_Manager__c, Regional_Manager__c
-            FROM Store__c WHERE Id IN :storeIds
-        ]);
+        if (storeIds == null || storeIds.isEmpty()) {
+            return new Map<Id, Store__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Store_Code__c, Region__c, '
+            + 'Store_Manager__c, Regional_Manager__c '
+            + 'FROM Store__c WHERE Id IN :storeIds';
+
+        return new Map<Id, Store__c>(
+            (List<Store__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{
+                    'storeIds' => storeIds
+                },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
     }
 
     public static Map<String, Store__c> selectByCodes(Set<String> storeCodes) {

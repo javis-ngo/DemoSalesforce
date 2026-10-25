@@ -17,6 +17,9 @@ public with sharing class SR_ErrorCode {
     public static final String INTERNAL_ERROR = 'INTERNAL_ERROR';
     public static final String CONFIGURATION_ERROR = 'CONFIGURATION_ERROR';
     public static final String VALIDATION_FAILED = 'VALIDATION_FAILED';
+    public static final String INVALID_STATUS_TRANSITION = 'INVALID_STATUS_TRANSITION';
+    public static final String FORBIDDEN = 'FORBIDDEN';
+    public static final String STALE_RECORD = 'STALE_RECORD';
 
     public static final Integer HTTP_BAD_REQUEST = 400;
     public static final Integer HTTP_NOT_FOUND = 404;

@@ -177,4 +177,68 @@ public inherited sharing class SR_ReturnRequestSelector {
         }
         return result;
     }
+
+    public static Map<Id, Return_Request__c> selectForApprovalDecision(
+        Set<Id> requestIds,
+        Boolean forUpdate
+    ) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Status__c, Channel__c, Approval_Level__c, '
+            + 'Assigned_Approver__c, CreatedById, Submitted_At__c, '
+            + 'Approval_Due_At__c, Rejection_Reason__c, Version_Token__c, '
+            + 'LastModifiedDate, Store__c '
+            + 'FROM Return_Request__c WHERE Id IN :requestIds'
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return new Map<Id, Return_Request__c>(
+            (List<Return_Request__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{
+                    'requestIds' => requestIds
+                },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
+    }
+
+    public static List<Return_Request__c> selectOverdueChtApprovals(
+        Datetime dueBefore,
+        Integer requestedLimit,
+        Boolean forUpdate
+    ) {
+        if (dueBefore == null) {
+            return new List<Return_Request__c>();
+        }
+
+        Integer rowLimit = requestedLimit == null
+            ? 200
+            : Math.max(1, Math.min(requestedLimit, 2000));
+
+        String pendingStatus = SR_StatusMachine.PENDING_APPROVAL;
+        String chtLevel = 'CHT';
+        String soql = approvalDecisionBaseQuery()
+            + ' WHERE Status__c = :pendingStatus'
+            + ' AND Approval_Level__c = :chtLevel'
+            + ' AND Approval_Due_At__c != null'
+            + ' AND Approval_Due_At__c <= :dueBefore'
+            + ' ORDER BY Approval_Due_At__c ASC'
+            + ' LIMIT ' + rowLimit
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return (List<Return_Request__c>) Database.query(soql);
+    }
+
+    private static String approvalDecisionBaseQuery() {
+        return 'SELECT Id, Name, Status__c, Channel__c, Approval_Level__c, '
+            + 'Assigned_Approver__c, CreatedById, Estimated_Refund__c, '
+            + 'Submitted_At__c, Approval_Due_At__c, Rejection_Reason__c, '
+            + 'Version_Token__c, LastModifiedDate, Store__c, '
+            + 'Store__r.Store_Manager__c, Store__r.Regional_Manager__c '
+            + 'FROM Return_Request__c';
+    }
+
 }
