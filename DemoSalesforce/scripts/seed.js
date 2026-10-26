@@ -1,6 +1,7 @@
 /**
  * SmartReturn – chạy script dữ liệu mẫu trong scripts/apex (DUC-02).
- *   npm run seed            → dựng toàn bộ dữ liệu mẫu: seed 1 → 4, dừng ở bước đầu tiên bị lỗi.
+ *   npm run seed            → dựng toàn bộ dữ liệu mẫu: seed 1 → 4, dừng ở bước đầu tiên bị lỗi
+ *                             (trừ seed 3 – group: lỗi thì báo rồi chạy tiếp seed 4).
  *                             Chạy lại được nhiều lần (seed 2 xóa đơn + yêu cầu cũ của khách mẫu rồi tạo lại).
  *   npm run seed:doi-vai -- <NV|CHT|QLV|KETOAN|CSKH> [--user <tên>] [--store <mã cửa hàng>]
  *                           → đổi vai cho 1 user test (seed-doi-vai.apex) rồi cập nhật group (seed 3).
@@ -16,12 +17,18 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const APEX_DIR = path.join(__dirname, 'apex');
 const ROLES = ['NV', 'CHT', 'QLV', 'KETOAN', 'CSKH'];
+// optional: lỗi thì báo rồi chạy tiếp bước sau (group chỉ phục vụ chia sẻ, chưa có thì vẫn demo được)
 const SEED_STEPS = [
     { file: 'seed-1-users.apex', title: 'User cho từng vai trò + permission set' },
     { file: 'seed-2-data.apex', title: 'Cửa hàng, sản phẩm + giá, khách hàng, đơn hàng' },
-    { file: 'seed-3-groups.apex', title: 'Group cửa hàng / vùng (cần SR_SharingService của Đức – Dev A)' },
+    {
+        file: 'seed-3-groups.apex',
+        title: 'Group cửa hàng / vùng (cần SR_SharingService của Đức – Dev A)',
+        optional: true
+    },
     { file: 'seed-4-requests.apex', title: 'Yêu cầu đổi trả mẫu (SR_ReturnRequestService.createRequests của Đức – Dev A)' }
 ];
+const SKIP_HINT = 'Bỏ qua bước này, chạy tiếp. Chạy lại "npm run seed" khi Đức đã deploy SR_SharingService.';
 const GROUP_STEP = SEED_STEPS[2];
 
 // Các dòng System.debug('SEED | ...') trong debug log
@@ -69,12 +76,23 @@ function runApex(file, title, step, orgArgs) {
 }
 
 function seedAll(orgArgs) {
+    const skipped = [];
     for (const [index, step] of SEED_STEPS.entries()) {
         const label = `[${index + 1}/${SEED_STEPS.length}]`;
-        if (!runApex(path.join(APEX_DIR, step.file), step.title, label, orgArgs)) {
-            console.error(`\nDừng ở ${step.file}. Sửa lỗi rồi chạy lại "npm run seed".`);
-            return 1;
+        if (runApex(path.join(APEX_DIR, step.file), step.title, label, orgArgs)) {
+            continue;
         }
+        if (step.optional) {
+            console.warn(`  ${SKIP_HINT}`);
+            skipped.push(step.file);
+            continue;
+        }
+        console.error(`\nDừng ở ${step.file}. Sửa lỗi rồi chạy lại "npm run seed".`);
+        return 1;
+    }
+    if (skipped.length > 0) {
+        console.log(`\nDựng xong dữ liệu mẫu, trừ: ${skipped.join(', ')}.`);
+        return 0;
     }
     console.log('\nDựng xong dữ liệu mẫu.');
     return 0;
@@ -132,8 +150,8 @@ function doiVai(args) {
         }
         // Group cửa hàng/vùng tính theo Store_Code__c và permission set Kế toán nên chạy lại seed 3
         if (!runApex(path.join(APEX_DIR, GROUP_STEP.file), GROUP_STEP.title, '[2/2]', orgArgs)) {
-            console.error('\nĐã đổi vai nhưng chưa cập nhật được group cửa hàng/vùng (seed 3).');
-            return 1;
+            console.warn('\nĐã đổi vai nhưng chưa cập nhật được group cửa hàng/vùng (seed 3).');
+            console.warn(`  ${SKIP_HINT}`);
         }
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
