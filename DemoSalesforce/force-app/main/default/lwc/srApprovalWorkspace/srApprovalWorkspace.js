@@ -12,7 +12,9 @@ import MSG_31 from '@salesforce/label/c.SR_MSG_31';
 import { msgFromError } from 'c/srMessages';
 import { STATUS_OPTIONS, formatLabel, vnd, reduceErrors } from 'c/srUtils';
 
-const CHANNEL = '/event/Return_Request_Event__e';
+// Event của màn hình duyệt (SR_EventPublisher – Dev B), luôn phát. Không nghe Return_Request_Event__e:
+// event đó gửi ra POS/App và chỉ phát khi bật công tắc B.4, nghe cả hai sẽ ra 2 toast cho cùng 1 kết quả.
+const CHANNEL = '/event/SR_UI_Notice__e';
 const PAGE_SIZE = 50;
 // Mất kết nối: subscribe lại sau 5 giây, lỗi tiếp thì chờ gấp đôi, tối đa 1 phút
 const RETRY_MIN_MS = 5000;
@@ -270,7 +272,7 @@ export default class SrApprovalWorkspace extends LightningElement {
         this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_MS);
     }
 
-    // Chỉ event của cửa hàng mình; event có Result__c khác (dùng chung với POS/App) thì bỏ qua
+    // Chỉ event của cửa hàng mình; Result__c khác COMPLETED / REFUND_FAILED thì bỏ qua
     handleEvent(p) {
         if (!this.myStoreCodes.includes(p.Store_Code__c)) {
             return;

@@ -115,8 +115,8 @@ public with sharing class SR_RequestPageService {
         line.quantity = l.Quantity__c;
         line.reason = l.Reason__c;
         line.declaredCondition = l.Declared_Condition__c;
-        // Org chưa có field tình trạng thực tế: bắt đầu bằng tình trạng khai báo
-        line.actualCondition = l.Declared_Condition__c;
+        // Chưa ghi tình trạng thực tế thì bắt đầu bằng tình trạng khách khai báo
+        line.actualCondition = (l.Actual_Condition__c != null) ? l.Actual_Condition__c : l.Declared_Condition__c;
         line.result = inspected ? l.Inspection_Result__c : null;
         line.note = l.Inspection_Note__c;
         line.estimatedRefund = l.Estimated_Refund__c;

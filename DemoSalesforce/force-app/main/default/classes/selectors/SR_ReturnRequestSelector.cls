@@ -30,23 +30,29 @@ public inherited sharing class SR_ReturnRequestSelector {
         public Integer position = 0;           // vị trí dòng đầu trang, tính từ 0
     }
 
-    // ---------- Portal: khách vãng lai (sharing theo class gọi) ----------
+    // ---------- Portal: khách vãng lai (SYSTEM_MODE, sharing theo class gọi) ----------
+    // Guest không có quyền object nào; API 68 không ghi mode thì chạy USER_MODE nên phải ghi rõ SYSTEM_MODE.
+    // SYSTEM_MODE vẫn theo từ khóa sharing của class gọi (SR_PortalService: without sharing).
 
     // Kèm SĐT của khách để đối chiếu 4 số cuối
     public static List<Return_Request__c> selectByNameWithPhone(String requestNumber) {
         return [
-            SELECT Id, Account__r.Phone FROM Return_Request__c WHERE Name = :requestNumber LIMIT 1
+            SELECT Id, Account__r.Phone FROM Return_Request__c WHERE Name = :requestNumber
+            WITH SYSTEM_MODE LIMIT 1
         ];
     }
 
     // Chỉ các field Portal được hiện (BR-17): trạng thái, lịch sử, tên + số lượng sản phẩm.
-    // Thời điểm đổi trạng thái lấy theo CreatedDate của dòng lịch sử (ghi ngay lúc đổi).
+    // Thời điểm đổi trạng thái lấy theo Changed_At__c; dòng lịch sử cũ chưa có thì dùng CreatedDate.
+    // Khách đăng nhập chỉ tới đây sau khi isSharedWithMe đã kiểm tra quyền.
     public static Return_Request__c selectPortalDetail(Id requestId) {
         return [
             SELECT Id, Name, Status__c,
                    (SELECT Id, Order_Product__r.Product2.Name, Quantity__c FROM Return_Request_Lines__r ORDER BY Name),
-                   (SELECT Id, To_Status__c, CreatedDate FROM Return_Request_Histories__r ORDER BY CreatedDate, Name)
+                   (SELECT Id, To_Status__c, Changed_At__c, CreatedDate FROM Return_Request_Histories__r
+                    ORDER BY Changed_At__c NULLS LAST, CreatedDate, Name)
             FROM Return_Request__c WHERE Id = :requestId
+            WITH SYSTEM_MODE
         ];
     }
 
@@ -64,7 +70,7 @@ public inherited sharing class SR_ReturnRequestSelector {
         return [
             SELECT Id, Name, Status__c,
                    (SELECT Id, Order_Product__r.Product2.Name, Order_Product__r.Product2.ProductCode, Quantity__c,
-                           Reason__c, Declared_Condition__c, Estimated_Refund__c, Actual_Refund__c,
+                           Reason__c, Declared_Condition__c, Actual_Condition__c, Estimated_Refund__c, Actual_Refund__c,
                            Inspection_Result__c, Inspection_Note__c
                     FROM Return_Request_Lines__r ORDER BY Name)
             FROM Return_Request__c WHERE Id = :requestId
@@ -141,7 +147,7 @@ public inherited sharing class SR_ReturnRequestSelector {
         }
 
         public Boolean contains(Id requestId) {
-            return ![SELECT Id FROM Return_Request__c WHERE Id = :requestId].isEmpty();
+            return ![SELECT Id FROM Return_Request__c WHERE Id = :requestId WITH USER_MODE].isEmpty();
         }
     }
 }

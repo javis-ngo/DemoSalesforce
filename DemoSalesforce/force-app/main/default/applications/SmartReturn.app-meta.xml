@@ -24,6 +24,7 @@
     <navType>Standard</navType>
     <tabs>Return_Request__c</tabs>
     <tabs>SR_Approval_Workspace</tabs>
+    <tabs>SR_Customer_Search</tabs>
     <tabs>standard-Order</tabs>
     <tabs>Store__c</tabs>
     <uiType>Lightning</uiType>
