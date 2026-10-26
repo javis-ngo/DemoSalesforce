@@ -1,6 +1,6 @@
 @IsTest(SeeAllData=false)
 private class SR_ApprovalRouterTest {
-    private static final String STORE_CODE = 'DUC06-ROUTER';
+    private static final String STORE_CODE = 'DUC06';
     private static final Decimal AUTO_THRESHOLD = 2000000;
     private static final Decimal CHT_THRESHOLD = 20000000;
 

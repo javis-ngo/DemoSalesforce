@@ -6,4 +6,3 @@ trigger ReturnRequestTrigger on Return_Request__c (before update, after insert) 
         SR_ReturnRequestTriggerHandler.afterInsert(Trigger.new);
     }
 }
-

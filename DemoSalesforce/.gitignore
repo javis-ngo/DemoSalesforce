@@ -51,6 +51,8 @@ $RECYCLE.BIN/
 **/objects/
 **/staticresources/
 **/globalValueSets/**
+**/permissionsets/
+**/profiles/
 
 # Claude Code
 .claude/

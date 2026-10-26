@@ -241,4 +241,60 @@ public inherited sharing class SR_ReturnRequestSelector {
             + 'FROM Return_Request__c';
     }
 
+    public static Map<Id, Return_Request__c> selectForInspection(
+        Set<Id> requestIds,
+        Boolean forUpdate
+    ) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Status__c, Inspection_Completed_At__c, '
+            + 'LastModifiedDate, Version_Token__c '
+            + 'FROM Return_Request__c WHERE Id IN :requestIds'
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return new Map<Id, Return_Request__c>(
+            (List<Return_Request__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{ 'requestIds' => requestIds },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
+    }
+
+    public static Map<Id, List<Return_Request_Line__c>> selectInspectionLines(
+        Set<Id> requestIds
+    ) {
+        Map<Id, List<Return_Request_Line__c>> result =
+            new Map<Id, List<Return_Request_Line__c>>();
+        if (requestIds == null || requestIds.isEmpty()) {
+            return result;
+        }
+
+        List<Return_Request_Line__c> rows =
+            (List<Return_Request_Line__c>) Database.queryWithBinds(
+                'SELECT Id, Return_Request__c, Quantity__c, Unit_Price__c, '
+                + 'Reason__c, Declared_Condition__c, Actual_Condition__c, '
+                + 'Refund_Rate__c, Estimated_Refund__c, Actual_Refund__c, '
+                + 'Inspection_Result__c, Inspection_Note__c '
+                + 'FROM Return_Request_Line__c '
+                + 'WHERE Return_Request__c IN :requestIds ORDER BY Id',
+                new Map<String, Object>{ 'requestIds' => requestIds },
+                AccessLevel.SYSTEM_MODE
+            );
+
+        for (Return_Request_Line__c row : rows) {
+            if (!result.containsKey(row.Return_Request__c)) {
+                result.put(
+                    row.Return_Request__c,
+                    new List<Return_Request_Line__c>()
+                );
+            }
+            result.get(row.Return_Request__c).add(row);
+        }
+        return result;
+    }
+
 }
