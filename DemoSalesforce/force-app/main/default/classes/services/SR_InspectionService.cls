@@ -89,11 +89,8 @@ public with sharing class SR_InspectionService {
             }
         }
         if (!allLineUpdates.isEmpty()) {
-            List<Database.SaveResult> lineResults = Database.update(
-                allLineUpdates,
-                false,
-                AccessLevel.SYSTEM_MODE
-            );
+            List<Database.SaveResult> lineResults =
+                updateInspectionLines(allLineUpdates);
             for (Integer i = 0; i < lineResults.size(); i++) {
                 if (!lineResults[i].isSuccess()) {
                     WorkItem owner = lineOwners[i];
@@ -126,11 +123,8 @@ public with sharing class SR_InspectionService {
             requestUpdateOwners.add(item);
         }
         if (!requestUpdates.isEmpty()) {
-            List<Database.SaveResult> updateResults = Database.update(
-                requestUpdates,
-                false,
-                AccessLevel.SYSTEM_MODE
-            );
+            List<Database.SaveResult> updateResults =
+                updateInspectionCompletionTimestamps(requestUpdates);
             for (Integer i = 0; i < updateResults.size(); i++) {
                 if (!updateResults[i].isSuccess()) {
                     WorkItem owner = requestUpdateOwners[i];
@@ -151,24 +145,29 @@ public with sharing class SR_InspectionService {
         }
         if (!noTransitionIds.isEmpty()) {
             Map<Id, Return_Request__c> refreshedById =
-                new Map<Id, Return_Request__c>(
-                    (List<Return_Request__c>) Database.queryWithBinds(
-                        'SELECT Id, Name, Status__c, LastModifiedDate '
-                        + 'FROM Return_Request__c WHERE Id IN :noTransitionIds',
-                        new Map<String, Object>{
-                            'noTransitionIds' => noTransitionIds
-                        },
-                        AccessLevel.SYSTEM_MODE
-                    )
+                SR_ReturnRequestSelector.selectInspectionCompletionState(
+                    noTransitionIds
                 );
             for (WorkItem item : work) {
                 if (
-                    item.result == null
-                    && item.input != null
-                    && item.input.requestId != null
-                    && noTransitionIds.contains(item.input.requestId)
+                    item.result != null
+                    || item.input == null
+                    || item.input.requestId == null
+                    || !noTransitionIds.contains(item.input.requestId)
                 ) {
-                    item.requestRow = refreshedById.get(item.input.requestId);
+                    continue;
+                }
+                Return_Request__c refreshed =
+                    refreshedById.get(item.input.requestId);
+                if (refreshed == null) {
+                    item.result = failure(
+                        item.input.requestId,
+                        SR_ErrorCode.INTERNAL_ERROR,
+                        'Không thể tải trạng thái yêu cầu sau khi hoàn tất kiểm định.'
+                    );
+                    results[item.index] = item.result;
+                } else {
+                    item.requestRow = refreshed;
                 }
             }
         }
@@ -209,11 +208,10 @@ public with sharing class SR_InspectionService {
         }
         Set<Id> refundRequestIds = new Set<Id>();
         if (!transitionedCompletionUpdates.isEmpty()) {
-            List<Database.SaveResult> completionResults = Database.update(
-                transitionedCompletionUpdates,
-                false,
-                AccessLevel.SYSTEM_MODE
-            );
+            List<Database.SaveResult> completionResults =
+                updateInspectionCompletionTimestamps(
+                    transitionedCompletionUpdates
+                );
             Set<Id> completedTransitionIds = new Set<Id>();
             for (Integer i = 0; i < completionResults.size(); i++) {
                 WorkItem item = transitionedOwners[i];
@@ -233,26 +231,31 @@ public with sharing class SR_InspectionService {
             }
             if (!completedTransitionIds.isEmpty()) {
                 Map<Id, Return_Request__c> refreshedById =
-                    new Map<Id, Return_Request__c>(
-                        (List<Return_Request__c>) Database.queryWithBinds(
-                            'SELECT Id, LastModifiedDate '
-                            + 'FROM Return_Request__c '
-                            + 'WHERE Id IN :completedTransitionIds',
-                            new Map<String, Object>{
-                                'completedTransitionIds' => completedTransitionIds
-                            },
-                            AccessLevel.SYSTEM_MODE
-                        )
+                    SR_ReturnRequestSelector.selectInspectionCompletionState(
+                        completedTransitionIds
                     );
                 for (WorkItem item : transitionedOwners) {
                     if (
-                        completedTransitionIds.contains(item.input.requestId)
-                        && results[item.index].success == true
+                        !completedTransitionIds.contains(item.input.requestId)
+                        || results[item.index].success != true
                     ) {
-                        results[item.index].versionToken = versionTokenOf(
-                            refreshedById.get(item.input.requestId).LastModifiedDate
-                        );
+                        continue;
                     }
+                    Return_Request__c refreshed =
+                        refreshedById.get(item.input.requestId);
+                    if (refreshed == null) {
+                        item.result = failure(
+                            item.input.requestId,
+                            SR_ErrorCode.INTERNAL_ERROR,
+                            'Không thể tải version token sau khi hoàn tất kiểm định.'
+                        );
+                        results[item.index] = item.result;
+                        refundRequestIds.remove(item.input.requestId);
+                        continue;
+                    }
+                    results[item.index].versionToken = versionTokenOf(
+                        refreshed.LastModifiedDate
+                    );
                 }
             }
         }
@@ -481,6 +484,47 @@ public with sharing class SR_InspectionService {
             item.needsRefundEnqueue = true;
         }
     }
+    /**
+     * Persists validated inspection outcomes using elevated field access.
+     *
+     * SYSTEM_MODE is intentional because Actual_Condition__c,
+     * Refund_Rate__c, Actual_Refund__c, Inspection_Result__c and
+     * Inspection_Note__c are workflow-controlled fields. They are written only
+     * after the service has loaded the authorized request through sharing,
+     * locked its canonical state, validated the optimistic-lock token and
+     * confirmed that every persisted line has exactly one inspection result.
+     * Direct user FLS must not partially apply or alter the domain calculation.
+     */
+    private static List<Database.SaveResult> updateInspectionLines(
+        List<Return_Request_Line__c> lineUpdates
+    ) {
+        return Database.update(
+            lineUpdates,
+            false,
+            AccessLevel.SYSTEM_MODE
+        );
+    }
+
+    /**
+     * Persists the workflow-controlled inspection completion timestamp.
+     *
+     * SYSTEM_MODE is intentional because Inspection_Completed_At__c is managed
+     * exclusively by the validated inspection workflow and must be written
+     * consistently even when the inspector does not have direct edit FLS for
+     * that technical field. The request has already been loaded under the
+     * service's sharing context and passed status and concurrency validation.
+     */
+    private static List<Database.SaveResult>
+        updateInspectionCompletionTimestamps(
+            List<Return_Request__c> requestUpdates
+        ) {
+        return Database.update(
+            requestUpdates,
+            false,
+            AccessLevel.SYSTEM_MODE
+        );
+    }
+
     private static SR_ActionResultDTO successWithoutTransition(
         Return_Request__c requestRow
     ) {

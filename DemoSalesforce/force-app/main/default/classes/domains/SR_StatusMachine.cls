@@ -56,12 +56,7 @@ public with sharing class SR_StatusMachine {
             requestIds.add(input.requestId);
         }
 
-        Map<Id, Return_Request__c> requestsById = new Map<Id, Return_Request__c>([
-            SELECT Id, Name, Status__c, Rejection_Reason__c, LastModifiedDate
-            FROM Return_Request__c
-            WHERE Id IN :requestIds
-            FOR UPDATE
-        ]);
+        Map<Id, Return_Request__c> requestsById = SR_ReturnRequestSelector.selectByIds(requestIds);
 
         List<TransitionWork> workItems = new List<TransitionWork>();
         List<Return_Request__c> recordsToUpdate = new List<Return_Request__c>();
