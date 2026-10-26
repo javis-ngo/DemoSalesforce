@@ -19,7 +19,10 @@ private class SR_IntegrationLoggerTest {
 
     @IsTest
     static void getInstance_returnsSingleton() {
-        Assert.areSame(SR_IntegrationLogger.getInstance(), SR_IntegrationLogger.getInstance());
+        SR_IntegrationLogger first = SR_IntegrationLogger.getInstance();
+        SR_IntegrationLogger second = SR_IntegrationLogger.getInstance();
+        Assert.areEqual(first, second, 'Phải trả về cùng một instance');
+        Assert.isTrue(first === second, 'Phải là cùng một tham chiếu singleton');
     }
 
     @IsTest

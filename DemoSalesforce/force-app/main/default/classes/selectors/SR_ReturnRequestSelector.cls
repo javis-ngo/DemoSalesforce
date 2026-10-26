@@ -65,6 +65,20 @@ public inherited sharing class SR_ReturnRequestSelector {
         ];
     }
 
+    public static Map<Id, Return_Request__c> selectByIds(Set<Id> requestIds) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+        return new Map<Id, Return_Request__c>([
+            SELECT Id, Name, Status__c, Approval_Level__c, Assigned_Approver__c,
+                Submitted_At__c, Approval_Due_At__c, Rejection_Reason__c,
+                Estimated_Refund__c, Actual_Refund__c, Version_Token__c,
+                Store__r.Store_Manager__c, Store__r.Regional_Manager__c
+            FROM Return_Request__c WHERE Id IN :requestIds
+            WITH USER_MODE
+        ]);
+    }
+
     // Yêu cầu kèm các dòng để kiểm định
     public static Return_Request__c selectForInspection(Id requestId) {
         return [
@@ -150,4 +164,208 @@ public inherited sharing class SR_ReturnRequestSelector {
             return ![SELECT Id FROM Return_Request__c WHERE Id = :requestId WITH USER_MODE].isEmpty();
         }
     }
+
+    public static Map<Id, Decimal> sumReservedQuantity(Set<Id> orderItemIds) {
+        Map<Id, Decimal> result = new Map<Id, Decimal>();
+        if (orderItemIds == null || orderItemIds.isEmpty()) return result;
+        for (AggregateResult ar : [
+            SELECT Order_Product__c orderItemId, SUM(Quantity__c) qty
+            FROM Return_Request_Line__c
+            WHERE Order_Product__c IN :orderItemIds
+              AND Return_Request__r.Status__c NOT IN :SR_ReturnRequestConstants.getReservationExcludedStatuses()
+            GROUP BY Order_Product__c
+        ]) result.put((Id) ar.get('orderItemId'), (Decimal) ar.get('qty'));
+        return result;
+    }
+
+    public class RiskAggregate {
+        public Integer requestCount;
+        public Decimal totalAmount;
+    }
+
+    public static Map<String, Return_Request__c> selectByExternalIds(Set<String> externalIds) {
+        Map<String, Return_Request__c> result = new Map<String, Return_Request__c>();
+        if (externalIds == null || externalIds.isEmpty()) {
+            return result;
+        }
+        for (Return_Request__c row : [
+            SELECT Id, Name, Status__c, Approval_Level__c, Estimated_Refund__c, External_Request_Id__c,
+                (SELECT Id, Order_Product__c, Product__r.ProductCode, Quantity__c,
+                        Unit_Price__c, Refund_Rate__c, Estimated_Refund__c
+                 FROM Return_Request_Lines__r)
+            FROM Return_Request__c
+            WHERE External_Request_Id__c IN :externalIds
+        ]) {
+            result.put(row.External_Request_Id__c, row);
+        }
+        return result;
+    }
+
+    public static Map<Id, RiskAggregate> aggregateRisk(Set<Id> accountIds, Datetime since) {
+        Map<Id, RiskAggregate> result = new Map<Id, RiskAggregate>();
+        if (accountIds == null || accountIds.isEmpty()) {
+            return result;
+        }
+        for (AggregateResult ar : [
+            SELECT Account__c accountId, COUNT(Id) requestCount, SUM(Estimated_Refund__c) totalAmount
+            FROM Return_Request__c
+            WHERE Account__c IN :accountIds
+              AND Status__c != :SR_ReturnRequestConstants.STATUS_CANCELLED
+              AND CreatedDate >= :since
+            GROUP BY Account__c
+        ]) {
+            RiskAggregate aggregate = new RiskAggregate();
+            aggregate.requestCount = (Integer) ar.get('requestCount');
+            aggregate.totalAmount = (Decimal) ar.get('totalAmount');
+            result.put((Id) ar.get('accountId'), aggregate);
+        }
+        return result;
+    }
+
+    /**
+     * Loads approval records and optionally locks them before a decision.
+     *
+     * The true branch deliberately uses SYSTEM_MODE because approval validation
+     * must evaluate the canonical status, assigned approver, creator and version
+     * token while holding a row lock. Missing FLS must not turn a valid record into
+     * a false "not found" result or permit a concurrent overwrite. The false branch
+     * uses USER_MODE because an unlocked result can be used in a user-visible flow.
+     */
+    public static Map<Id, Return_Request__c> selectForApprovalDecision(
+        Set<Id> requestIds,
+        Boolean forUpdate
+    ) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Status__c, Channel__c, Approval_Level__c, '
+            + 'Assigned_Approver__c, CreatedById, Submitted_At__c, '
+            + 'Approval_Due_At__c, Rejection_Reason__c, Version_Token__c, '
+            + 'LastModifiedDate, Store__c '
+            + 'FROM Return_Request__c WHERE Id IN :requestIds'
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return new Map<Id, Return_Request__c>(
+            (List<Return_Request__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{
+                    'requestIds' => requestIds
+                },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
+    }
+
+    public static List<Return_Request__c> selectOverdueChtApprovals(
+        Datetime dueBefore,
+        Integer requestedLimit,
+        Boolean forUpdate
+    ) {
+        if (dueBefore == null) {
+            return new List<Return_Request__c>();
+        }
+
+        Integer rowLimit = requestedLimit == null
+            ? 200
+            : Math.max(1, Math.min(requestedLimit, 2000));
+
+        String pendingStatus = SR_StatusMachine.PENDING_APPROVAL;
+        String chtLevel = 'CHT';
+        String soql = approvalDecisionBaseQuery()
+            + ' WHERE Status__c = :pendingStatus'
+            + ' AND Approval_Level__c = :chtLevel'
+            + ' AND Approval_Due_At__c != null'
+            + ' AND Approval_Due_At__c <= :dueBefore'
+            + ' ORDER BY Approval_Due_At__c ASC'
+            + ' LIMIT ' + rowLimit
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return (List<Return_Request__c>) Database.query(soql);
+    }
+
+    private static String approvalDecisionBaseQuery() {
+        return 'SELECT Id, Name, Status__c, Channel__c, Approval_Level__c, '
+            + 'Assigned_Approver__c, CreatedById, Estimated_Refund__c, '
+            + 'Submitted_At__c, Approval_Due_At__c, Rejection_Reason__c, '
+            + 'Version_Token__c, LastModifiedDate, Store__c, '
+            + 'Store__r.Store_Manager__c, Store__r.Regional_Manager__c '
+            + 'FROM Return_Request__c';
+    }
+
+    /**
+     * Loads inspection records and optionally locks them before inspection results
+     * are persisted.
+     *
+     * The true branch deliberately uses SYSTEM_MODE because status, completion and
+     * optimistic-lock checks must use the canonical record while it is locked.
+     * USER_MODE could make the result depend on the inspector's technical FLS and
+     * undermine concurrency protection. The false branch uses USER_MODE.
+     */
+    public static Map<Id, Return_Request__c> selectForInspection(
+        Set<Id> requestIds,
+        Boolean forUpdate
+    ) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Status__c, Inspection_Completed_At__c, '
+            + 'LastModifiedDate, Version_Token__c '
+            + 'FROM Return_Request__c WHERE Id IN :requestIds'
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return new Map<Id, Return_Request__c>(
+            (List<Return_Request__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{ 'requestIds' => requestIds },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
+    }
+
+    /**
+     * Loads the persisted line population required to validate a complete
+     * inspection submission.
+     *
+     * SYSTEM_MODE is intentional because every stored line must participate in the
+     * completeness and refund calculation checks. Omitting a line because of FLS
+     * could allow a partial inspection to be accepted. The calling service remains
+     * responsible for authorizing the request and exposing only allowlisted DTOs.
+     */
+    public static Map<Id, List<Return_Request_Line__c>> selectInspectionLines(
+        Set<Id> requestIds
+    ) {
+        Map<Id, List<Return_Request_Line__c>> result =
+            new Map<Id, List<Return_Request_Line__c>>();
+        if (requestIds == null || requestIds.isEmpty()) {
+            return result;
+        }
+
+        List<Return_Request_Line__c> rows =
+            (List<Return_Request_Line__c>) Database.queryWithBinds(
+                'SELECT Id, Return_Request__c, Quantity__c, Unit_Price__c, '
+                + 'Reason__c, Declared_Condition__c, Actual_Condition__c, '
+                + 'Refund_Rate__c, Estimated_Refund__c, Actual_Refund__c, '
+                + 'Inspection_Result__c, Inspection_Note__c '
+                + 'FROM Return_Request_Line__c '
+                + 'WHERE Return_Request__c IN :requestIds ORDER BY Id',
+                new Map<String, Object>{ 'requestIds' => requestIds },
+                AccessLevel.SYSTEM_MODE
+            );
+
+        for (Return_Request_Line__c row : rows) {
+            if (!result.containsKey(row.Return_Request__c)) {
+                result.put(
+                    row.Return_Request__c,
+                    new List<Return_Request_Line__c>()
+                );
+            }
+            result.get(row.Return_Request__c).add(row);
+        }
+        return result;
+    }
+
 }
