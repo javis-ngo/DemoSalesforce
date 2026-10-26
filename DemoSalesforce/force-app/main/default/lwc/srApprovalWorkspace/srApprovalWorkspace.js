@@ -194,7 +194,7 @@ export default class SrApprovalWorkspace extends LightningElement {
     async submitDecision(approve, reason) {
         const selected = this.rows.filter((r) => this.selectedIds.includes(r.id));
         const numberOf = new Map(selected.map((r) => [r.id, r.requestNumber]));
-        const items = selected.map((r) => ({ requestId: r.id, lastModified: r.lastModified }));
+        const items = selected.map((r) => ({ requestId: r.id, versionToken: r.versionToken }));
         this.decisionErrors = [];
         this.isLoading = true;
         try {

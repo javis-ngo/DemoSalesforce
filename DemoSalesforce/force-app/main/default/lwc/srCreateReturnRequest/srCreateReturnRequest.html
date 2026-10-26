@@ -51,8 +51,8 @@
                             <tr key={line.orderItemId} class={line.rowClass}>
                                 <td class="slds-cell-wrap sr-col_product">
                                     <div>{line.productName}</div>
-                                    <template lwc:if={line.blockReason}>
-                                        <div class="slds-text-body_small sr-text_reason">{line.blockReason}</div>
+                                    <template lwc:if={line.lockText}>
+                                        <div class="slds-text-body_small sr-text_reason">{line.lockText}</div>
                                     </template>
                                     <template lwc:if={line.error}>
                                         <div class="slds-text-color_error slds-text-body_small">{line.error}</div>
@@ -62,9 +62,9 @@
                                     </template>
                                 </td>
                                 <td>{line.sku}</td>
-                                <td>{line.family}</td>
-                                <td class="slds-text-align_right">{line.purchasedQty}</td>
-                                <td class="slds-text-align_right">{line.alreadyReturnedQty}</td>
+                                <td>{line.category}</td>
+                                <td class="slds-text-align_right">{line.purchasedQuantity}</td>
+                                <td class="slds-text-align_right">{line.previouslyReturnedQuantity}</td>
                                 <td>{line.deadlineText}</td>
                                 <td class="sr-col_qty">
                                     <lightning-input

@@ -48,7 +48,7 @@
                                                 variant="label-hidden"
                                                 type="button"
                                                 options={resultOptions}
-                                                value={line.result}
+                                                value={line.inspectionResult}
                                                 disabled={readOnly}
                                                 data-id={line.lineId}
                                                 onchange={handleResult}
@@ -69,7 +69,7 @@
                                             <lightning-input
                                                 label="Ghi chú"
                                                 variant="label-hidden"
-                                                value={line.note}
+                                                value={line.inspectionNote}
                                                 required={line.noteRequired}
                                                 disabled={readOnly}
                                                 data-id={line.lineId}

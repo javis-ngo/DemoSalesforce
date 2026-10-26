@@ -1,5 +1,5 @@
 // =====================================================================
-// Tên group lấy từ class của Dũng (SR_SharingService – DUNG-13), nên cần class đó đã deploy.
+// Tên group lấy từ class của Đức – Dev A (SR_SharingService), nên cần class đó đã deploy (hiện chưa có).
 // Quy tắc DUNG-13: SR_Store_<mã> = user có User.Store_Code__c = mã (NV + CHT);
 //                  SR_Region_<vùng> = QLV của các cửa hàng trong vùng (Store__c.Regional_Manager__c).
 // Thêm SR_Accounting = user có permission set SR_Accountant (theo Guide-DevC).

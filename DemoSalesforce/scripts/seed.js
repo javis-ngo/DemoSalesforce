@@ -19,8 +19,8 @@ const ROLES = ['NV', 'CHT', 'QLV', 'KETOAN', 'CSKH'];
 const SEED_STEPS = [
     { file: 'seed-1-users.apex', title: 'User cho từng vai trò + permission set' },
     { file: 'seed-2-data.apex', title: 'Cửa hàng, sản phẩm + giá, khách hàng, đơn hàng' },
-    { file: 'seed-3-groups.apex', title: 'Group cửa hàng / vùng (cần SR_SharingService của Dũng)' },
-    { file: 'seed-4-requests.apex', title: 'Yêu cầu đổi trả mẫu (cần service tạo yêu cầu của Dũng)' }
+    { file: 'seed-3-groups.apex', title: 'Group cửa hàng / vùng (cần SR_SharingService của Đức – Dev A)' },
+    { file: 'seed-4-requests.apex', title: 'Yêu cầu đổi trả mẫu (SR_ReturnRequestService.createRequests của Đức – Dev A)' }
 ];
 const GROUP_STEP = SEED_STEPS[2];
 

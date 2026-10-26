@@ -72,17 +72,17 @@ public inherited sharing class SR_ReturnRequestSelector {
         return new Map<Id, Return_Request__c>([
             SELECT Id, Name, Status__c, Approval_Level__c, Assigned_Approver__c,
                 Submitted_At__c, Approval_Due_At__c, Rejection_Reason__c,
-                Estimated_Refund__c, Actual_Refund__c, Version_Token__c,
+                Estimated_Refund__c, Actual_Refund__c, Version_Token__c, LastModifiedDate,
                 Store__r.Store_Manager__c, Store__r.Regional_Manager__c
             FROM Return_Request__c WHERE Id IN :requestIds
             WITH USER_MODE
         ]);
     }
 
-    // Yêu cầu kèm các dòng để kiểm định
+    // Yêu cầu kèm các dòng để kiểm định; LastModifiedDate để tính versionToken cho SR_InspectionService
     public static Return_Request__c selectForInspection(Id requestId) {
         return [
-            SELECT Id, Name, Status__c,
+            SELECT Id, Name, Status__c, LastModifiedDate,
                    (SELECT Id, Order_Product__r.Product2.Name, Order_Product__r.Product2.ProductCode, Quantity__c,
                            Reason__c, Declared_Condition__c, Actual_Condition__c, Estimated_Refund__c, Actual_Refund__c,
                            Inspection_Result__c, Inspection_Note__c

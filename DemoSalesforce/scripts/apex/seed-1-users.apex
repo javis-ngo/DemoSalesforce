@@ -162,13 +162,13 @@ for (List<String> r : roles) {
     }
     String status = r[2];
     if (!psId.containsKey(r[2])) {
-        status = 'CHƯA CÓ permission set ' + r[2] + ' (chờ Dũng deploy DUNG-12)';
+        status = 'CHƯA CÓ permission set ' + r[2] + ' (chờ Đức – Dev A deploy)';
     } else if (psaError.containsKey(u.Id)) {
         status = 'LỖI gán ' + r[2] + ': ' + psaError.get(u.Id);
     }
     System.debug('SEED | ' + r[1] + ' → ' + r[0] + domain + ' | ' + status);
 }
-String adminStatus = psId.containsKey('SR_Admin') ? 'SR_Admin' : 'CHƯA CÓ permission set SR_Admin (chờ Dũng deploy DUNG-12)';
+String adminStatus = psId.containsKey('SR_Admin') ? 'SR_Admin' : 'CHƯA CÓ permission set SR_Admin (chờ Đức – Dev A deploy)';
 if (psaError.containsKey(me)) {
     adminStatus = 'LỖI gán SR_Admin: ' + psaError.get(me);
 }

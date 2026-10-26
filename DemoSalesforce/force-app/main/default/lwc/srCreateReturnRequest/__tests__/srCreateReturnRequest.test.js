@@ -1,17 +1,20 @@
 import { createElement } from '@lwc/engine-dom';
 import SrCreateReturnRequest from 'c/srCreateReturnRequest';
-import getReturnableLines from '@salesforce/apex/SR_ReturnUiController.getReturnableLines';
-import previewLevel from '@salesforce/apex/SR_ReturnUiController.previewLevel';
+import getReturnableOrder from '@salesforce/apex/SR_ReturnUiController.getReturnableOrder';
+import previewCreate from '@salesforce/apex/SR_ReturnUiController.previewCreate';
 
 jest.mock(
-    '@salesforce/apex/SR_ReturnUiController.getReturnableLines',
+    '@salesforce/apex/SR_ReturnUiController.getReturnableOrder',
     () => {
         const { createApexTestWireAdapter } = require('@salesforce/sfdx-lwc-jest');
         return { default: createApexTestWireAdapter(jest.fn()) };
     },
     { virtual: true }
 );
-jest.mock('@salesforce/apex/SR_ReturnUiController.previewLevel', () => ({ default: jest.fn() }), { virtual: true });
+jest.mock('@salesforce/apex/SR_ReturnUiController.previewCreate', () => ({ default: jest.fn() }), { virtual: true });
+jest.mock('@salesforce/label/c.SR_MSG_03', () => ({ default: 'Ngành hàng {0} không áp dụng đổi trả.' }), {
+    virtual: true
+});
 jest.mock('@salesforce/apex/SR_ReturnUiController.createFromCounter', () => ({ default: jest.fn() }), {
     virtual: true
 });
@@ -50,22 +53,25 @@ const INFO = {
             orderItemId: LAPTOP,
             productName: 'Laptop 15 inch Pro',
             sku: 'LT-15-PRO',
-            family: 'Laptop',
-            purchasedQty: 1,
-            alreadyReturnedQty: 0,
-            deadline: '2026-10-30',
-            returnable: true
+            category: 'Laptop',
+            purchasedQuantity: 1,
+            previouslyReturnedQuantity: 0,
+            returnableQuantity: 1,
+            returnDeadline: '2026-10-30',
+            eligible: true
         },
         {
             orderItemId: CARD,
             productName: 'Thẻ cào Viettel 100K',
             sku: 'TC-VT-100K',
-            family: 'Thẻ cào',
-            purchasedQty: 2,
-            alreadyReturnedQty: 0,
-            deadline: null,
-            returnable: false,
-            blockReason: 'Ngành hàng Thẻ cào không áp dụng đổi trả.'
+            category: 'Thẻ cào',
+            purchasedQuantity: 2,
+            previouslyReturnedQuantity: 0,
+            returnableQuantity: 0,
+            returnDeadline: null,
+            eligible: false,
+            lockCode: 'NOT_RETURNABLE',
+            lockMessage: 'Ngành hàng {0} không áp dụng đổi trả.'
         }
     ]
 };
@@ -82,7 +88,7 @@ async function render() {
     const element = createElement('c-sr-create-return-request', { is: SrCreateReturnRequest });
     element.recordId = '801000000000001AAA';
     document.body.appendChild(element);
-    getReturnableLines.emit(INFO);
+    getReturnableOrder.emit(INFO);
     await flushPromises();
     return element;
 }
@@ -119,13 +125,15 @@ describe('c-sr-create-return-request', () => {
         expect(submitButton(element).disabled).toBe(true);
     });
 
-    it('đổi SL / lý do / tình trạng → previewLevel sau 300ms, hiện tiền, cấp duyệt và lỗi MSG-04 tại dòng', async () => {
+    it('đổi SL / lý do / tình trạng → previewCreate sau 300ms, hiện tiền, cấp duyệt và lỗi MSG-04 tại dòng', async () => {
         jest.useFakeTimers();
-        previewLevel.mockResolvedValue({
-            totalRefund: 25000000,
+        previewCreate.mockResolvedValue({
+            success: true,
+            estimatedRefund: 25000000,
             approvalLevel: 'QLV',
-            customerRisky: false,
-            lines: [{ orderItemId: LAPTOP, refundAmount: 25000000 }]
+            riskFlag: false,
+            lines: [{ orderItemId: LAPTOP, sku: 'LT-15-PRO', refundAmount: 25000000 }],
+            errors: []
         });
         const element = await render();
 
@@ -134,12 +142,12 @@ describe('c-sr-create-return-request', () => {
         change(reason, 'DEFECT');
         change(condition, 'SEALED');
         await flushPromises();
-        expect(previewLevel).not.toHaveBeenCalled(); // còn trong 300ms debounce
+        expect(previewCreate).not.toHaveBeenCalled(); // còn trong 300ms debounce
 
         jest.advanceTimersByTime(300);
         await flushPromises();
-        expect(previewLevel).toHaveBeenCalledTimes(1);
-        expect(JSON.parse(previewLevel.mock.calls[0][0].draftJson)).toEqual({
+        expect(previewCreate).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(previewCreate.mock.calls[0][0].draftJson)).toEqual({
             orderId: '801000000000001AAA',
             lines: [{ orderItemId: LAPTOP, quantity: 1, reason: 'DEFECT', condition: 'SEALED' }]
         });
@@ -147,10 +155,11 @@ describe('c-sr-create-return-request', () => {
         expect(element.shadowRoot.textContent).toContain('Quản lý vùng duyệt');
         expect(submitButton(element).disabled).toBe(false);
 
-        previewLevel.mockResolvedValue({
-            totalRefund: 0,
-            approvalLevel: 'QLV',
-            lines: [{ orderItemId: LAPTOP, errorCode: 'QUANTITY_EXCEEDED', errorParams: ['Laptop 15 inch Pro', 1] }]
+        // Service của Dev A báo lỗi theo SKU, không gửi params: màn hình tự điền tên + SL còn trả được
+        previewCreate.mockResolvedValue({
+            success: false,
+            lines: [],
+            errors: [{ sku: 'LT-15-PRO', code: 'QUANTITY_EXCEEDED', message: 'Số lượng trả của {0} vượt quá…' }]
         });
         change(field(element, 'lightning-input', LAPTOP), '2');
         jest.advanceTimersByTime(300);
