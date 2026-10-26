@@ -166,7 +166,7 @@ public inherited sharing class SR_ReturnRequestSelector {
             SELECT Order_Product__c orderItemId, SUM(Quantity__c) qty
             FROM Return_Request_Line__c
             WHERE Order_Product__c IN :orderItemIds
-              AND Return_Request__r.Status__c NOT IN ('REJECTED', 'CANCELLED')
+              AND Return_Request__r.Status__c NOT IN :SR_ReturnRequestConstants.getReservationExcludedStatuses()
             GROUP BY Order_Product__c
         ]) result.put((Id) ar.get('orderItemId'), (Decimal) ar.get('qty'));
         return result;
@@ -204,7 +204,7 @@ public inherited sharing class SR_ReturnRequestSelector {
             SELECT Account__c accountId, COUNT(Id) requestCount, SUM(Estimated_Refund__c) totalAmount
             FROM Return_Request__c
             WHERE Account__c IN :accountIds
-              AND Status__c != 'CANCELLED'
+              AND Status__c != :SR_ReturnRequestConstants.STATUS_CANCELLED
               AND CreatedDate >= :since
             GROUP BY Account__c
         ]) {
