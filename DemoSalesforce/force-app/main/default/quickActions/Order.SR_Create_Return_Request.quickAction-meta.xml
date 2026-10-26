@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
     <actionSubtype>ScreenAction</actionSubtype>
-    <description>D.1 – Tạo yêu cầu trả hàng tại quầy từ đơn hàng (FR-01, FR-02). Mở LWC srCreateReturnRequest.</description>
+    <description>D.1 - Tạo yêu cầu trả hàng tại quầy từ đơn hàng (FR-01, FR-02). Mở LWC srCreateReturnRequest.</description>
     <label>Tạo yêu cầu trả hàng</label>
     <lightningWebComponent>srCreateReturnRequest</lightningWebComponent>
     <optionsCreateFeedItem>false</optionsCreateFeedItem>

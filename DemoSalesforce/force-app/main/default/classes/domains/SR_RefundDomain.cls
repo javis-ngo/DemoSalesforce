@@ -5,6 +5,7 @@
  *  | 200 + PENDING        | PENDING  | giữ REFUND_PROCESSING, chờ PayHub gọi INT-04                    |
  *  | 422                  | REJECTED | REFUND_FAILED ngay, không thử lại                               |
  *  | 5xx, quá 10 giây     | RETRY    | hẹn gửi lại sau N phút; hết lượt → REFUND_FAILED + báo Kế toán   |
+ * Thêm: Kế toán hoàn tay REFUND_FAILED → COMPLETED (B7), PayHub callback INT-04 (B9).
  * Không truy vấn, không ghi dữ liệu: nhận bản ghi đã query sẵn và kết quả PayHub, nên test được không cần tạo dữ liệu.
  * Owner: Dev B
  */
@@ -16,6 +17,9 @@ public inherited sharing class SR_RefundDomain {
     public static final String STATUS_REFUND_FAILED = 'REFUND_FAILED';
 
     public static final String ERROR_INVALID_COMMAND = 'INVALID_COMMAND';
+
+    // = độ dài field PayHub_Refund_Id__c
+    public static final Integer TRANSACTION_ID_MAX_LENGTH = 100;
 
     // Kết quả xử lý 1 yêu cầu: các field cần ghi + trạng thái đích (null = giữ REFUND_PROCESSING)
     public class Decision {
@@ -78,6 +82,42 @@ public inherited sharing class SR_RefundDomain {
             }
         }
         return d;
+    }
+
+    // ---------- B7: Kế toán xác nhận đã hoàn tay (FR-14, Phụ lục C) ----------
+
+    // Chỉ Refund Failed → Completed; mọi trạng thái khác là chuyển sai (MSG-20)
+    public static Boolean canMarkManualRefund(Return_Request__c r) {
+        return r?.Status__c == STATUS_REFUND_FAILED;
+    }
+
+    // Mã giao dịch PayHub Kế toán nhập: bỏ khoảng trắng; null nếu trống hoặc dài quá field (100)
+    public static String normalizeTransactionId(String transactionId) {
+        String value = (transactionId == null) ? null : transactionId.trim();
+        return (String.isBlank(value) || value.length() > TRANSACTION_ID_MAX_LENGTH) ? null : value;
+    }
+
+    // ---------- B9: PayHub báo kết quả qua INT-04 (FR-12, Phụ lục E.4) ----------
+
+    public static final String CALLBACK_SUCCESS = 'SUCCESS';
+    public static final String CALLBACK_FAILED = 'FAILED';
+
+    public static Boolean isValidCallbackStatus(String status) {
+        return status == CALLBACK_SUCCESS || status == CALLBACK_FAILED;
+    }
+
+    // Trạng thái đích khi nhận callback; null = bỏ qua. Chỉ đổi khi đang REFUND_PROCESSING, nên PayHub gọi lặp
+    // (yêu cầu đã COMPLETED/REFUND_FAILED) không làm đổi dữ liệu, kể cả khi lần sau báo kết quả khác.
+    public static String callbackTarget(Return_Request__c r, String callbackStatus) {
+        if (r?.Status__c != STATUS_REFUND_PROCESSING || !isValidCallbackStatus(callbackStatus)) {
+            return null;
+        }
+        return callbackStatus == CALLBACK_SUCCESS ? STATUS_COMPLETED : STATUS_REFUND_FAILED;
+    }
+
+    public static String describeCallbackFailure(String failureReason) {
+        return ('PayHub báo FAILED qua INT-04: ' + (String.isBlank(failureReason) ? 'không rõ lý do' : failureReason))
+            .abbreviate(2000);
     }
 
     // vd. "Lần 2/3: RETRY HTTP 500 HTTP_500"

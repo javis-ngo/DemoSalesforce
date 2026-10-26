@@ -23,6 +23,21 @@ private class SR_LoggerTest {
         Assert.areEqual(9, logger.getPendingCount(), 'Chưa push thì log phải nằm trong danh sách chờ');
     }
 
+    // NFR-09: mã lỗi trả cho người dùng phải khớp Correlation_Id__c của log
+    @IsTest
+    static void errorWithCode_returnsCodeAndQueuesLog() {
+        SR_Logger logger = SR_Logger.getInstance();
+        String code = logger.errorWithCode('Cls.method', 'ctx', new DmlException('boom'), null);
+
+        Assert.isTrue(Pattern.matches('E\\d{15}', code), 'Mã lỗi sai định dạng: ' + code);
+        Assert.areEqual(1, logger.getPendingCount());
+    }
+
+    @IsTest
+    static void errorWithCode_nullException_stillReturnsCode() {
+        Assert.isNotNull(SR_Logger.getInstance().errorWithCode('Cls.method', 'ctx', null, null));
+    }
+
     @IsTest
     static void push_publishesAndClearsPendingList() {
         SR_Logger logger = SR_Logger.getInstance();

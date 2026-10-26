@@ -1,5 +1,6 @@
 /**
- * Selector cho luồng hoàn tiền PayHub (FR-11, FR-14; BR-12, BR-13).
+ * Selector cho luồng hoàn tiền PayHub (FR-11, FR-12, FR-14; BR-12, BR-13): gửi (B5), thử lại (B6),
+ * Kế toán hoàn tay (B7), PayHub callback (B9).
  *  - "inherited sharing": SR_RefundService chạy without sharing vì Queueable chạy dưới quyền người bấm
  *    "Hoàn tất kiểm định" (nhân viên cửa hàng), người này không chắc xem được các field hoàn tiền.
  * Owner: Dev B
@@ -21,6 +22,53 @@ public inherited sharing class SR_RefundSelector {
               AND PayHub_Refund_Id__c = null
               AND (Next_Retry_At__c = null OR Next_Retry_At__c <= :now)
         ];
+    }
+
+    // B6 – BR-12: yêu cầu đã đến giờ gửi lại; quá maxRows thì lần quét sau lấy tiếp.
+    // FOR UPDATE: hai lần quét chồng nhau (job chạy chậm) không cùng nhận một yêu cầu
+    // (SOQL có FOR UPDATE không được dùng ORDER BY).
+    public static List<Return_Request__c> selectDueForRetry(Datetime now, Integer maxRows) {
+        return [
+            SELECT Id, Next_Retry_At__c
+            FROM Return_Request__c
+            WHERE Status__c = :SR_RefundDomain.STATUS_REFUND_PROCESSING
+              AND PayHub_Refund_Id__c = null
+              AND Next_Retry_At__c != null
+              AND Next_Retry_At__c <= :now
+            LIMIT :maxRows
+            FOR UPDATE
+        ];
+    }
+
+    // B7, B9: khóa yêu cầu trước khi đổi kết quả hoàn tiền, kèm field SR_EventPublisher cần
+    public static List<Return_Request__c> selectForResultById(Id requestId) {
+        return [
+            SELECT Id, Name, Status__c, Actual_Refund__c, PayHub_Refund_Id__c, Store__r.Store_Code__c
+            FROM Return_Request__c
+            WHERE Id = :requestId
+            LIMIT 1
+            FOR UPDATE
+        ];
+    }
+
+    // B9 – INT-04: merchantRef = mã yêu cầu (Name)
+    public static List<Return_Request__c> selectForResultByNumber(String requestNumber) {
+        return [
+            SELECT Id, Name, Status__c, Actual_Refund__c, PayHub_Refund_Id__c, Store__r.Store_Code__c
+            FROM Return_Request__c
+            WHERE Name = :requestNumber
+            LIMIT 1
+            FOR UPDATE
+        ];
+    }
+
+    // B6: job lịch thử lại đang có (để hủy trước khi lên lịch lại)
+    public static List<Id> selectScheduledJobIds(List<String> jobNames) {
+        List<Id> ids = new List<Id>();
+        for (CronTrigger ct : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name IN :jobNames]) {
+            ids.add(ct.Id);
+        }
+        return ids;
     }
 
     // FR-14: Public Group của Kế toán; null nếu chưa tạo (scripts/apex/seed-3-groups.apex)

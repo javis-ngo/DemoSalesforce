@@ -32,5 +32,13 @@
         <members>*</members>
         <name>CustomNotificationType</name>
     </types>
+    <types>
+        <members>*</members>
+        <name>CustomPermission</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>QuickAction</name>
+    </types>
     <version>67.0</version>
 </Package>
