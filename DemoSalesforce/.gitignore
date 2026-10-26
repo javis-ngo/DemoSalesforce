@@ -63,5 +63,3 @@ server.csr
 server.crt
 *.pem
 *.key
-
-SmartReturn-individual-plan.md
