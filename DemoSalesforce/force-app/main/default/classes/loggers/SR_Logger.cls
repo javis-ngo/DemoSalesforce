@@ -154,6 +154,26 @@ public with sharing class SR_Logger {
         add(classMethod, context, correlationId, LEVEL_ERROR, message, recordId, stackTrace);
     }
 
+    /**
+     * Ghi ERROR kèm mã tra cứu (lưu ở Correlation_Id__c) và trả mã đó để hiện cho người dùng
+     * trong MSG-90 hoặc trả trong API 500 (NFR-09). Người dùng báo mã, tìm trong tab Nhật ký lỗi.
+     * Vẫn cần gọi push() sau đó.
+     */
+    public String errorWithCode(String classMethod, String context, Exception ex, String recordId) {
+        String code = newErrorCode();
+        add(classMethod, context, code, LEVEL_ERROR,
+            ex == null ? null : ex.getTypeName() + ': ' + ex.getMessage(),
+            recordId, ex == null ? null : ex.getStackTraceString());
+        return code;
+    }
+
+    /** Mã lỗi dạng E + yyMMddHHmmss (giờ VN) + 3 số ngẫu nhiên, vd. E261019093015123. */
+    @TestVisible
+    private static String newErrorCode() {
+        return 'E' + Datetime.now().format('yyMMddHHmmss', 'Asia/Ho_Chi_Minh')
+            + String.valueOf(Math.mod(Math.abs(Crypto.getRandomInteger()), 1000)).leftPad(3, '0');
+    }
+
     // ---- Private ----
 
     /** Trả về Id user đang chạy; Guest user thì trả về null. */

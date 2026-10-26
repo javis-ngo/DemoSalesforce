@@ -115,4 +115,51 @@ private class SR_RefundDomainTest {
         Assert.areEqual(SR_RefundDomain.ERROR_INVALID_COMMAND, res.errorCode);
         Assert.areEqual(SR_RefundDomain.STATUS_REFUND_FAILED, decide(0, res).toStatus);
     }
+
+    private static Return_Request__c withStatus(String status) {
+        return new Return_Request__c(Status__c = status);
+    }
+
+    // ---------- B7: Kế toán hoàn tay ----------
+
+    @IsTest
+    static void manualRefundOnlyFromRefundFailed() {
+        Assert.isTrue(SR_RefundDomain.canMarkManualRefund(withStatus(SR_RefundDomain.STATUS_REFUND_FAILED)));
+        Assert.isFalse(SR_RefundDomain.canMarkManualRefund(withStatus(SR_RefundDomain.STATUS_REFUND_PROCESSING)));
+        Assert.isFalse(SR_RefundDomain.canMarkManualRefund(withStatus(SR_RefundDomain.STATUS_COMPLETED)));
+        Assert.isFalse(SR_RefundDomain.canMarkManualRefund(null));
+    }
+
+    @IsTest
+    static void transactionIdIsTrimmedAndBounded() {
+        Assert.areEqual('PH-1', SR_RefundDomain.normalizeTransactionId('  PH-1 '));
+        Assert.isNull(SR_RefundDomain.normalizeTransactionId('   '));
+        Assert.isNull(SR_RefundDomain.normalizeTransactionId(null));
+        Assert.isNull(SR_RefundDomain.normalizeTransactionId('x'.repeat(SR_RefundDomain.TRANSACTION_ID_MAX_LENGTH + 1)));
+    }
+
+    // ---------- B9: INT-04 ----------
+
+    @IsTest
+    static void callbackMovesRefundProcessingToResult() {
+        Return_Request__c r = withStatus(SR_RefundDomain.STATUS_REFUND_PROCESSING);
+        Assert.areEqual(SR_RefundDomain.STATUS_COMPLETED, SR_RefundDomain.callbackTarget(r, 'SUCCESS'));
+        Assert.areEqual(SR_RefundDomain.STATUS_REFUND_FAILED, SR_RefundDomain.callbackTarget(r, 'FAILED'));
+        Assert.isNull(SR_RefundDomain.callbackTarget(r, 'PENDING'));
+    }
+
+    // E.4: gọi lặp sau khi đã có kết quả thì không đổi gì, kể cả khi báo kết quả khác
+    @IsTest
+    static void repeatedCallbackIsIgnored() {
+        Assert.isNull(SR_RefundDomain.callbackTarget(withStatus(SR_RefundDomain.STATUS_COMPLETED), 'SUCCESS'));
+        Assert.isNull(SR_RefundDomain.callbackTarget(withStatus(SR_RefundDomain.STATUS_COMPLETED), 'FAILED'));
+        Assert.isNull(SR_RefundDomain.callbackTarget(withStatus(SR_RefundDomain.STATUS_REFUND_FAILED), 'SUCCESS'));
+        Assert.isNull(SR_RefundDomain.callbackTarget(null, 'SUCCESS'));
+    }
+
+    @IsTest
+    static void callbackFailureDescribesReason() {
+        Assert.isTrue(SR_RefundDomain.describeCallbackFailure('CARD_CLOSED').endsWith('CARD_CLOSED'));
+        Assert.isTrue(SR_RefundDomain.describeCallbackFailure(null).endsWith('không rõ lý do'));
+    }
 }

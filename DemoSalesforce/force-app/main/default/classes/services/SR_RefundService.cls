@@ -6,6 +6,8 @@
  *  - Không bao giờ hoàn 2 lần (BR-13): chỉ gửi yêu cầu đang REFUND_PROCESSING, Idempotency-Key = mã yêu cầu.
  *  - Xử lý kết quả theo Phụ lục E.3 (SR_RefundDomain). Hết lượt thử hoặc 422 → REFUND_FAILED + báo nhóm Kế toán (FR-14).
  *  - Mọi lần gửi được ghi Integration_Log__c qua SR_PayHubClient (BR-14).
+ *  - retryDue(): SR_RefundRetryJob (B6) gọi mỗi 15 phút; applyFinalResult()/notifyAccounting() dùng lại ở
+ *    SR_ManualRefundService (B7) và SR_RefundCallbackService (B9).
  *  - Chuyển trạng thái qua SR_StatusMachine (chặn chuyển sai, ghi lịch sử FR-06); phát sự kiện kết quả qua
  *    SR_EventPublisher (Publish After Commit, BR-15).
  * [DEV A] Phụ thuộc phạm vi Dev A (tìm "[DEV A]" để tích hợp):
@@ -20,6 +22,10 @@ public without sharing class SR_RefundService implements Queueable, Database.All
 
     @TestVisible
     private static final Integer BATCH_SIZE = 10;
+
+    // Mỗi lần quét thử lại nhận tối đa 100 yêu cầu (10 job nối tiếp × 10 yêu cầu)
+    @TestVisible
+    private static final Integer RETRY_SCAN_LIMIT = 100;
 
     private static final String SETTING_DEVELOPER_NAME = 'Default';
     private static final Integer DEFAULT_MAX_ATTEMPTS = 3;
@@ -53,6 +59,54 @@ public without sharing class SR_RefundService implements Queueable, Database.All
             return null;
         }
         return System.enqueueJob(new SR_RefundService(new List<Id>(requestIds)));
+    }
+
+    /**
+     * B6 – BR-12: SR_RefundRetryJob gọi mỗi 15 phút. Nhận các yêu cầu đã đến giờ hẹn gửi lại (tối đa
+     * RETRY_SCAN_LIMIT, phần dư lần quét sau lấy tiếp), xóa Next_Retry_At__c để lần quét sau không nhận trùng,
+     * rồi xếp job gửi. DML ở đây không ảnh hưởng callout vì callout chạy ở transaction của Queueable.
+     * Trả về số yêu cầu đã xếp gửi lại.
+     */
+    public static Integer retryDue() {
+        // Công tắc B.4 tắt: giữ nguyên giờ hẹn, bật lại thì lần quét kế tiếp gửi
+        if (setting()?.Enable_PayHub__c == false) {
+            return 0;
+        }
+        List<Return_Request__c> due = SR_RefundSelector.selectDueForRetry(System.now(), RETRY_SCAN_LIMIT);
+        if (due.isEmpty()) {
+            return 0;
+        }
+        Set<Id> ids = new Set<Id>();
+        for (Return_Request__c r : due) {
+            r.Next_Retry_At__c = null;
+            ids.add(r.Id);
+        }
+        update due;
+        enqueue(ids);
+        return ids.size();
+    }
+
+    /**
+     * B7 (Kế toán hoàn tay), B9 (PayHub callback): ghi kết quả cuối cho 1 yêu cầu đã khóa FOR UPDATE.
+     * r cần Id, Name, Status__c (trạng thái hiện tại), Actual_Refund__c, Store__r.Store_Code__c.
+     * changes: các field hoàn tiền cần ghi (PayHub_Refund_Id__c, Last_Refund_Error__c...), có Id.
+     * Lỗi thì rollback toàn bộ và ném ra để nơi gọi trả lỗi.
+     */
+    public static void applyFinalResult(Return_Request__c r, Return_Request__c changes, String toStatus, String note) {
+        Savepoint sp = Database.setSavepoint();
+        try {
+            changes.Next_Retry_At__c = null;
+            update changes;
+            // [DEV A] SR_StatusMachine thuộc Dev A (chưa có trong repo): kiểm tra chuyển hợp lệ, ghi lịch sử
+            SR_StatusMachine.change(
+                new List<Return_Request__c>{ new Return_Request__c(Id = r.Id, Status__c = r.Status__c) },
+                toStatus, note);
+            r.Status__c = toStatus;
+            SR_EventPublisher.publishResult(new List<Return_Request__c>{ r });
+        } catch (Exception e) {
+            Database.rollback(sp);
+            throw e;
+        }
     }
 
     public void execute(QueueableContext ctx) {
@@ -165,17 +219,20 @@ public without sharing class SR_RefundService implements Queueable, Database.All
             throw e;
         }
 
-        notifyAccounting(finished, failedErrors, logger);
+        notifyAccounting(finished, failedErrors);
     }
 
     /**
      * FR-14: báo nhóm Kế toán (Public Group SR_Accounting) qua Custom Notification SR_Notification, kèm lỗi.
      * Kế toán vẫn thấy yêu cầu REFUND_FAILED trong danh sách nên gửi thông báo lỗi chỉ ghi log, không rollback.
+     * Dùng lại ở SR_RefundCallbackService (PayHub báo FAILED qua INT-04). Gọi SAU khi đã ghi dữ liệu;
+     * log được đưa vào SR_Logger, nơi gọi tự push().
      */
-    private static void notifyAccounting(List<Return_Request__c> finished, Map<Id, String> failedErrors, SR_Logger logger) {
-        if (failedErrors.isEmpty()) {
+    public static void notifyAccounting(List<Return_Request__c> finished, Map<Id, String> failedErrors) {
+        if (failedErrors == null || failedErrors.isEmpty()) {
             return;
         }
+        SR_Logger logger = SR_Logger.getInstance();
         try {
             Id groupId = SR_RefundSelector.selectGroupId(ACCOUNTING_GROUP);
             Id typeId = SR_RefundSelector.selectNotificationTypeId(NOTIFICATION_TYPE);
