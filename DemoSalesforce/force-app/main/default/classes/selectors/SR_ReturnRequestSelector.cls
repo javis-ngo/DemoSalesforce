@@ -1,19 +1,175 @@
+/**
+ * Selector cho Return_Request__c: gom truy vấn yêu cầu trả hàng của màn hình duyệt (D.2), trang yêu cầu (D.3)
+ * và Customer Portal (D.4).
+ *  - "inherited sharing": chạy theo sharing của class gọi.
+ *  - Truy vấn "của tôi" cho khách đăng nhập LUÔN áp sharing (USER_MODE trong class con with sharing SharedWithMe),
+ *    vì không có điều kiện lọc theo khách: chỉ Sharing Set giới hạn kết quả.
+ *  - Phân trang bằng Database.PaginationCursor thay cho OFFSET (OFFSET chỉ tới 2000 dòng). Mỗi lần gọi tạo cursor
+ *    mới nên luôn thấy dữ liệu mới nhất. Dùng PaginationCursor (cursor cho UI, 200.000 cursor/ngày) thay vì
+ *    Database.Cursor (10.000 cursor/ngày, dùng chung với xử lý nền).
+ * Owner: Dev C
+ */
 public inherited sharing class SR_ReturnRequestSelector {
+
+    // Một trang kết quả: tổng số dòng khớp điều kiện và các dòng của trang
     public class RecordPage {
         public Integer total = 0;
         public List<Return_Request__c> records = new List<Return_Request__c>();
     }
 
+    // Điều kiện lọc hàng chờ duyệt (D.2). Service điền sẵn giá trị mặc định trước khi gọi.
     public class QueueCriteria {
         public String status;
-        public Date fromDate;
-        public Date toDate;
-        public Id storeId;
-        public Id approverId;
+        public Date fromDate;                  // từ 00:00 ngày này
+        public Date toDate;                    // đến hết ngày này
+        public Id storeId;                     // null = mọi cửa hàng
+        public Id approverId;                  // null = mọi người duyệt
         public Schema.SObjectField orderBy;
         public Boolean descending = false;
         public Integer pageSize;
-        public Integer position = 0;
+        public Integer position = 0;           // vị trí dòng đầu trang, tính từ 0
+    }
+
+    // ---------- Portal: khách vãng lai (sharing theo class gọi) ----------
+
+    // Kèm SĐT của khách để đối chiếu 4 số cuối
+    public static List<Return_Request__c> selectByNameWithPhone(String requestNumber) {
+        return [
+            SELECT Id, Account__r.Phone FROM Return_Request__c WHERE Name = :requestNumber LIMIT 1
+        ];
+    }
+
+    // Chỉ các field Portal được hiện (BR-17): trạng thái, lịch sử, tên + số lượng sản phẩm.
+    // Thời điểm đổi trạng thái lấy theo CreatedDate của dòng lịch sử (ghi ngay lúc đổi).
+    public static Return_Request__c selectPortalDetail(Id requestId) {
+        return [
+            SELECT Id, Name, Status__c,
+                   (SELECT Id, Order_Product__r.Product2.Name, Quantity__c FROM Return_Request_Lines__r ORDER BY Name),
+                   (SELECT Id, To_Status__c, CreatedDate FROM Return_Request_Histories__r ORDER BY CreatedDate, Name)
+            FROM Return_Request__c WHERE Id = :requestId
+        ];
+    }
+
+    // ---------- Trang yêu cầu (D.3): USER_MODE ----------
+
+    // Trạng thái hiện tại, để kiểm tra trước khi bấm Nhận hàng / Hủy
+    public static Return_Request__c selectById(Id requestId) {
+        return [
+            SELECT Id, Name, Status__c FROM Return_Request__c WHERE Id = :requestId WITH USER_MODE
+        ];
+    }
+
+    public static Map<Id, Return_Request__c> selectByIds(Set<Id> requestIds) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+        return new Map<Id, Return_Request__c>([
+            SELECT Id, Name, Status__c, Approval_Level__c, Assigned_Approver__c,
+                Submitted_At__c, Approval_Due_At__c, Rejection_Reason__c,
+                Estimated_Refund__c, Actual_Refund__c, Version_Token__c,
+                Store__r.Store_Manager__c, Store__r.Regional_Manager__c
+            FROM Return_Request__c WHERE Id IN :requestIds
+            WITH USER_MODE
+        ]);
+    }
+
+    // Yêu cầu kèm các dòng để kiểm định
+    public static Return_Request__c selectForInspection(Id requestId) {
+        return [
+            SELECT Id, Name, Status__c,
+                   (SELECT Id, Order_Product__r.Product2.Name, Order_Product__r.Product2.ProductCode, Quantity__c,
+                           Reason__c, Declared_Condition__c, Estimated_Refund__c, Actual_Refund__c,
+                           Inspection_Result__c, Inspection_Note__c
+                    FROM Return_Request_Lines__r ORDER BY Name)
+            FROM Return_Request__c WHERE Id = :requestId
+            WITH USER_MODE
+        ];
+    }
+
+    // ---------- Portal: khách đăng nhập (luôn with sharing) ----------
+
+    public static RecordPage selectSharedWithMe(Integer pageSize, Integer position) {
+        return new SharedWithMe().page(pageSize, position);
+    }
+
+    public static Boolean isSharedWithMe(Id requestId) {
+        return new SharedWithMe().contains(requestId);
+    }
+
+    // ---------- Màn hình duyệt: USER_MODE, chỉ thấy yêu cầu và field được phép xem (BR-16) ----------
+
+    public static RecordPage selectApprovalQueue(QueueCriteria c) {
+        Map<String, Object> binds = new Map<String, Object>();
+        String soql = 'SELECT Id, Name, Status__c, Account__r.Name, Account__r.Risk_Flag__c, Store__r.Name, Channel__c, ' +
+            'Estimated_Refund__c, Approval_Level__c, Assigned_Approver__r.Name, Submitted_At__c, ' +
+            'Approval_Due_At__c, LastModifiedDate FROM Return_Request__c' + queueWhere(c, binds) +
+            ' ORDER BY ' + c.orderBy.getDescribe().getName() + (c.descending ? ' DESC' : ' ASC') + ' NULLS LAST' +
+            maxRows();
+        return fetchPage(Database.getPaginationCursorWithBinds(soql, binds, AccessLevel.USER_MODE), c.position, c.pageSize);
+    }
+
+    private static String queueWhere(QueueCriteria c, Map<String, Object> binds) {
+        binds.put('status', c.status);
+        binds.put('fromDt', Datetime.newInstance(c.fromDate, Time.newInstance(0, 0, 0, 0)));
+        binds.put('toDt', Datetime.newInstance(c.toDate.addDays(1), Time.newInstance(0, 0, 0, 0)));
+        String whereClause = ' WHERE Status__c = :status AND CreatedDate >= :fromDt AND CreatedDate < :toDt';
+        if (c.storeId != null) {
+            whereClause += ' AND Store__c = :storeId';
+            binds.put('storeId', c.storeId);
+        }
+        if (c.approverId != null) {
+            whereClause += ' AND Assigned_Approver__c = :approverId';
+            binds.put('approverId', c.approverId);
+        }
+        return whereClause;
+    }
+
+    // ---------- Phân trang ----------
+
+    // Một PaginationCursor chứa tối đa 100.000 dòng: giới hạn sẵn để danh sách quá dài không làm lỗi trang
+    private static String maxRows() {
+        return ' LIMIT ' + Limits.getLimitApexPaginationCursorRows();
+    }
+
+    // Lấy 1 trang từ cursor; trang nằm ngoài số dòng hiện có thì trả rỗng.
+    // fetchPage báo lỗi nếu đọc quá dòng cuối, nên trang cuối chỉ lấy phần còn lại.
+    private static RecordPage fetchPage(Database.PaginationCursor cursor, Integer position, Integer pageSize) {
+        RecordPage p = new RecordPage();
+        p.total = cursor.getNumRecords();
+        if (position >= 0 && position < p.total) {
+            for (SObject row : cursor.fetchPage(position, Math.min(pageSize, p.total - position)).getRecords()) {
+                p.records.add((Return_Request__c) row);
+            }
+        }
+        return p;
+    }
+
+    // Sharing Set: Account của User = Account__c của yêu cầu
+    private with sharing class SharedWithMe {
+
+        public RecordPage page(Integer pageSize, Integer position) {
+            Database.PaginationCursor cursor = Database.getPaginationCursor(
+                'SELECT Id, Name, CreatedDate, Status__c, Estimated_Refund__c, Actual_Refund__c' +
+                ' FROM Return_Request__c ORDER BY CreatedDate DESC' + maxRows(), AccessLevel.USER_MODE);
+            return fetchPage(cursor, position, pageSize);
+        }
+
+        public Boolean contains(Id requestId) {
+            return ![SELECT Id FROM Return_Request__c WHERE Id = :requestId].isEmpty();
+        }
+    }
+
+    public static Map<Id, Decimal> sumReservedQuantity(Set<Id> orderItemIds) {
+        Map<Id, Decimal> result = new Map<Id, Decimal>();
+        if (orderItemIds == null || orderItemIds.isEmpty()) return result;
+        for (AggregateResult ar : [
+            SELECT Order_Product__c orderItemId, SUM(Quantity__c) qty
+            FROM Return_Request_Line__c
+            WHERE Order_Product__c IN :orderItemIds
+              AND Return_Request__r.Status__c NOT IN ('REJECTED', 'CANCELLED')
+            GROUP BY Order_Product__c
+        ]) result.put((Id) ar.get('orderItemId'), (Decimal) ar.get('qty'));
+        return result;
     }
 
     public class RiskAggregate {
@@ -21,132 +177,43 @@ public inherited sharing class SR_ReturnRequestSelector {
         public Decimal totalAmount;
     }
 
-    private static final String ACTION_FIELDS =
-        'SELECT Id, Name, Status__c, Channel__c, Account__c, Order__c, ' +
-        'Store__c, Assigned_Approver__c, Approval_Level__c, CreatedById, ' +
-        'Estimated_Refund__c, Actual_Refund__c, Rejection_Reason__c, ' +
-        'Inspection_Completed_At__c, LastModifiedDate ' +
-        'FROM Return_Request__c';
-
-    /**
-     * Returns the quantity already reserved by every non-terminal return request.
-     *
-     * SYSTEM_MODE is intentional because this aggregate protects a cross-user
-     * quantity invariant. The calculation must include reservations created by
-     * other users, channels and integration-owned records; applying the current
-     * user's CRUD/FLS could fail the query or understate the reserved quantity and
-     * allow the total returned quantity to exceed the purchased quantity. Record
-     * scope is still controlled by the inherited sharing context of the caller.
-     */
-    public static Map<Id, Decimal> sumReservedQuantity(Set<Id> orderItemIds) {
-        Map<Id, Decimal> result = new Map<Id, Decimal>();
-        if (orderItemIds == null || orderItemIds.isEmpty()) {
-            return result;
-        }
-        String soql =
-            'SELECT Order_Product__c orderItemId, SUM(Quantity__c) qty ' +
-            'FROM Return_Request_Line__c ' +
-            'WHERE Order_Product__c IN :orderItemIds ' +
-            'AND Return_Request__r.Status__c NOT IN (\'REJECTED\', \'CANCELLED\') ' +
-            'GROUP BY Order_Product__c';
-        List<AggregateResult> rows = (List<AggregateResult>) Database.queryWithBinds(
-            soql,
-            new Map<String, Object>{ 'orderItemIds' => orderItemIds },
-            AccessLevel.SYSTEM_MODE
-        );
-        for (AggregateResult row : rows) {
-            result.put(
-                (Id) row.get('orderItemId'),
-                (Decimal) row.get('qty')
-            );
-        }
-        return result;
-    }
-
-    /**
-     * Aggregates the canonical risk history for the supplied customer accounts.
-     *
-     * SYSTEM_MODE is intentional because risk routing must not vary according to
-     * which employee or channel creates the next request. USER_MODE could omit
-     * requests outside the acting user's object/field permissions and incorrectly
-     * bypass regional approval. The inherited sharing context continues to govern
-     * record-level scope.
-     */
-    public static Map<Id, RiskAggregate> aggregateRisk(
-        Set<Id> accountIds,
-        Datetime sinceValue
-    ) {
-        Map<Id, RiskAggregate> result = new Map<Id, RiskAggregate>();
-        if (accountIds == null || accountIds.isEmpty() || sinceValue == null) {
-            return result;
-        }
-        String soql =
-            'SELECT Account__c accountId, COUNT(Id) requestCount, ' +
-            'SUM(Estimated_Refund__c) totalAmount ' +
-            'FROM Return_Request__c ' +
-            'WHERE Account__c IN :accountIds ' +
-            'AND Status__c != \'CANCELLED\' ' +
-            'AND CreatedDate >= :sinceValue ' +
-            'GROUP BY Account__c';
-        List<AggregateResult> rows = (List<AggregateResult>) Database.queryWithBinds(
-            soql,
-            new Map<String, Object>{
-                'accountIds' => accountIds,
-                'sinceValue' => sinceValue
-            },
-            AccessLevel.SYSTEM_MODE
-        );
-        for (AggregateResult row : rows) {
-            RiskAggregate value = new RiskAggregate();
-            value.requestCount = (Integer) row.get('requestCount');
-            value.totalAmount = (Decimal) row.get('totalAmount');
-            result.put((Id) row.get('accountId'), value);
-        }
-        return result;
-    }
-
-    /**
-     * Finds existing requests used to enforce external-request idempotency.
-     *
-     * SYSTEM_MODE is intentional because a duplicate must be detected even when
-     * the original request was created by another channel, integration user or
-     * store employee. Using USER_MODE could hide the original record and allow a
-     * second request with the same external identifier. Only the fields required
-     * to return the original idempotent result are selected.
-     */
-    public static Map<String, Return_Request__c> selectByExternalIdsForIdempotency(
-        Set<String> externalIds
-    ) {
-        Map<String, Return_Request__c> result =
-            new Map<String, Return_Request__c>();
+    public static Map<String, Return_Request__c> selectByExternalIds(Set<String> externalIds) {
+        Map<String, Return_Request__c> result = new Map<String, Return_Request__c>();
         if (externalIds == null || externalIds.isEmpty()) {
             return result;
         }
-        String soql =
-            'SELECT Id, Name, Status__c, Approval_Level__c, ' +
-            'Estimated_Refund__c, External_Request_Id__c, ' +
-            '(SELECT Id, Order_Product__c, Product__r.ProductCode, Quantity__c, ' +
-            'Unit_Price__c, Refund_Rate__c, Estimated_Refund__c ' +
-            'FROM Return_Request_Lines__r) ' +
-            'FROM Return_Request__c ' +
-            'WHERE External_Request_Id__c IN :externalIds';
-        List<Return_Request__c> rows =
-            (List<Return_Request__c>) Database.queryWithBinds(
-                soql,
-                new Map<String, Object>{ 'externalIds' => externalIds },
-                AccessLevel.SYSTEM_MODE
-            );
-        for (Return_Request__c row : rows) {
+        for (Return_Request__c row : [
+            SELECT Id, Name, Status__c, Approval_Level__c, Estimated_Refund__c, External_Request_Id__c,
+                (SELECT Id, Order_Product__c, Product__r.ProductCode, Quantity__c,
+                        Unit_Price__c, Refund_Rate__c, Estimated_Refund__c
+                 FROM Return_Request_Lines__r)
+            FROM Return_Request__c
+            WHERE External_Request_Id__c IN :externalIds
+        ]) {
             result.put(row.External_Request_Id__c, row);
         }
         return result;
     }
 
-    // Compatibility wrapper retained for the current SR_ReturnRequestService.
-    public static Map<String, Return_Request__c> selectByExternalIds(
-        Set<String> externalIds
-    ) {
-        return selectByExternalIdsForIdempotency(externalIds);
+    public static Map<Id, RiskAggregate> aggregateRisk(Set<Id> accountIds, Datetime since) {
+        Map<Id, RiskAggregate> result = new Map<Id, RiskAggregate>();
+        if (accountIds == null || accountIds.isEmpty()) {
+            return result;
+        }
+        for (AggregateResult ar : [
+            SELECT Account__c accountId, COUNT(Id) requestCount, SUM(Estimated_Refund__c) totalAmount
+            FROM Return_Request__c
+            WHERE Account__c IN :accountIds
+              AND Status__c != 'CANCELLED'
+              AND CreatedDate >= :since
+            GROUP BY Account__c
+        ]) {
+            RiskAggregate aggregate = new RiskAggregate();
+            aggregate.requestCount = (Integer) ar.get('requestCount');
+            aggregate.totalAmount = (Decimal) ar.get('totalAmount');
+            result.put((Id) ar.get('accountId'), aggregate);
+        }
+        return result;
     }
 
     /**
@@ -162,7 +229,63 @@ public inherited sharing class SR_ReturnRequestSelector {
         Set<Id> requestIds,
         Boolean forUpdate
     ) {
-        return selectActionRecords(requestIds, forUpdate);
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Status__c, Channel__c, Approval_Level__c, '
+            + 'Assigned_Approver__c, CreatedById, Submitted_At__c, '
+            + 'Approval_Due_At__c, Rejection_Reason__c, Version_Token__c, '
+            + 'LastModifiedDate, Store__c '
+            + 'FROM Return_Request__c WHERE Id IN :requestIds'
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return new Map<Id, Return_Request__c>(
+            (List<Return_Request__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{
+                    'requestIds' => requestIds
+                },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
+    }
+
+    public static List<Return_Request__c> selectOverdueChtApprovals(
+        Datetime dueBefore,
+        Integer requestedLimit,
+        Boolean forUpdate
+    ) {
+        if (dueBefore == null) {
+            return new List<Return_Request__c>();
+        }
+
+        Integer rowLimit = requestedLimit == null
+            ? 200
+            : Math.max(1, Math.min(requestedLimit, 2000));
+
+        String pendingStatus = SR_StatusMachine.PENDING_APPROVAL;
+        String chtLevel = 'CHT';
+        String soql = approvalDecisionBaseQuery()
+            + ' WHERE Status__c = :pendingStatus'
+            + ' AND Approval_Level__c = :chtLevel'
+            + ' AND Approval_Due_At__c != null'
+            + ' AND Approval_Due_At__c <= :dueBefore'
+            + ' ORDER BY Approval_Due_At__c ASC'
+            + ' LIMIT ' + rowLimit
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return (List<Return_Request__c>) Database.query(soql);
+    }
+
+    private static String approvalDecisionBaseQuery() {
+        return 'SELECT Id, Name, Status__c, Channel__c, Approval_Level__c, '
+            + 'Assigned_Approver__c, CreatedById, Estimated_Refund__c, '
+            + 'Submitted_At__c, Approval_Due_At__c, Rejection_Reason__c, '
+            + 'Version_Token__c, LastModifiedDate, Store__c, '
+            + 'Store__r.Store_Manager__c, Store__r.Regional_Manager__c '
+            + 'FROM Return_Request__c';
     }
 
     /**
@@ -178,7 +301,23 @@ public inherited sharing class SR_ReturnRequestSelector {
         Set<Id> requestIds,
         Boolean forUpdate
     ) {
-        return selectActionRecords(requestIds, forUpdate);
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        String soql =
+            'SELECT Id, Name, Status__c, Inspection_Completed_At__c, '
+            + 'LastModifiedDate, Version_Token__c '
+            + 'FROM Return_Request__c WHERE Id IN :requestIds'
+            + (forUpdate == true ? ' FOR UPDATE' : '');
+
+        return new Map<Id, Return_Request__c>(
+            (List<Return_Request__c>) Database.queryWithBinds(
+                soql,
+                new Map<String, Object>{ 'requestIds' => requestIds },
+                AccessLevel.SYSTEM_MODE
+            )
+        );
     }
 
     /**
@@ -198,20 +337,19 @@ public inherited sharing class SR_ReturnRequestSelector {
         if (requestIds == null || requestIds.isEmpty()) {
             return result;
         }
-        String soql =
-            'SELECT Id, Return_Request__c, Order_Product__c, Product__c, ' +
-            'Quantity__c, Unit_Price__c, Reason__c, Declared_Condition__c, ' +
-            'Actual_Condition__c, Refund_Rate__c, Actual_Refund__c, ' +
-            'Inspection_Result__c, Inspection_Note__c ' +
-            'FROM Return_Request_Line__c ' +
-            'WHERE Return_Request__c IN :requestIds ' +
-            'ORDER BY Return_Request__c, Name';
+
         List<Return_Request_Line__c> rows =
             (List<Return_Request_Line__c>) Database.queryWithBinds(
-                soql,
+                'SELECT Id, Return_Request__c, Quantity__c, Unit_Price__c, '
+                + 'Reason__c, Declared_Condition__c, Actual_Condition__c, '
+                + 'Refund_Rate__c, Estimated_Refund__c, Actual_Refund__c, '
+                + 'Inspection_Result__c, Inspection_Note__c '
+                + 'FROM Return_Request_Line__c '
+                + 'WHERE Return_Request__c IN :requestIds ORDER BY Id',
                 new Map<String, Object>{ 'requestIds' => requestIds },
                 AccessLevel.SYSTEM_MODE
             );
+
         for (Return_Request_Line__c row : rows) {
             if (!result.containsKey(row.Return_Request__c)) {
                 result.put(
@@ -224,270 +362,4 @@ public inherited sharing class SR_ReturnRequestSelector {
         return result;
     }
 
-    /**
-     * Reloads the canonical completion state after an authorized inspection write.
-     *
-     * SYSTEM_MODE is intentional because the refresh follows domain DML that
-     * persists workflow-controlled inspection fields using elevated access.
-     * Status__c and LastModifiedDate must reflect the final database state
-     * regardless of the inspector's direct CRUD or FLS.
-     *
-     * This method does not authorize access and must only be called for requests
-     * that the service has already authorized and successfully processed.
-     */
-    public static Map<Id, Return_Request__c>
-        selectInspectionCompletionState(Set<Id> requestIds) {
-
-        if (requestIds == null || requestIds.isEmpty()) {
-            return new Map<Id, Return_Request__c>();
-        }
-
-        List<Return_Request__c> rows =
-            (List<Return_Request__c>) Database.queryWithBinds(
-                'SELECT Id, Name, Status__c, LastModifiedDate '
-                + 'FROM Return_Request__c '
-                + 'WHERE Id IN:requestIds',
-                new Map<String, Object>{
-                    'requestIds' => requestIds
-                },
-                AccessLevel.SYSTEM_MODE
-            );
-
-        return new Map<Id, Return_Request__c>(rows);
-    }
-
-    /**
-     * Loads and locks canonical Return Request records for a domain operation.
-     *
-     * SYSTEM_MODE is intentional because cross-user state transitions must inspect
-     * and lock all technical fields required by the state machine. The caller must
-     * perform operation-specific authorization before DML, and inherited sharing
-     * continues to control record-level visibility.
-     */
-    public static Map<Id, Return_Request__c> selectForUpdate(Set<Id> requestIds) {
-        return selectActionRecords(requestIds, true);
-    }
-
-    /**
-     * Returns the approval work queue in USER_MODE because the records and fields
-     * are displayed directly to the current user. Salesforce must enforce sharing,
-     * restriction rules, object permissions and FLS for every selected field.
-     */
-    public static RecordPage selectApprovalQueue(QueueCriteria criteria) {
-        if (criteria == null || String.isBlank(criteria.status)) {
-            return new RecordPage();
-        }
-        Integer pageSize = normalizePageSize(criteria.pageSize);
-        Integer position = criteria.position == null
-            ? 0
-            : Math.max(0, criteria.position);
-        Date fromDate = criteria.fromDate == null
-            ? Date.today().addDays(-30)
-            : criteria.fromDate;
-        Date toDate = criteria.toDate == null ? Date.today() : criteria.toDate;
-        Datetime fromDt = Datetime.newInstance(
-            fromDate,
-            Time.newInstance(0, 0, 0, 0)
-        );
-        Datetime toDt = Datetime.newInstance(
-            toDate.addDays(1),
-            Time.newInstance(0, 0, 0, 0)
-        );
-        Map<String, Object> binds = new Map<String, Object>{
-            'status' => criteria.status,
-            'fromDt' => fromDt,
-            'toDt' => toDt
-        };
-        String soql =
-            'SELECT Id, Name, Status__c, Account__r.Name, ' +
-            'Account__r.Risk_Flag__c, Store__r.Name, Channel__c, ' +
-            'Estimated_Refund__c, Approval_Level__c, ' +
-            'Assigned_Approver__r.Name, Submitted_At__c, ' +
-            'Approval_Due_At__c, LastModifiedDate ' +
-            'FROM Return_Request__c ' +
-            'WHERE Status__c = :status ' +
-            'AND CreatedDate >= :fromDt AND CreatedDate < :toDt';
-        if (criteria.storeId != null) {
-            soql += ' AND Store__c = :storeId';
-            binds.put('storeId', criteria.storeId);
-        }
-        if (criteria.approverId != null) {
-            soql += ' AND Assigned_Approver__c = :approverId';
-            binds.put('approverId', criteria.approverId);
-        }
-        String orderField = criteria.orderBy == null
-            ? 'CreatedDate'
-            : criteria.orderBy.getDescribe().getName();
-        soql += ' ORDER BY ' + orderField;
-        soql += criteria.descending == true ? ' DESC' : ' ASC';
-        soql += ' NULLS LAST LIMIT ' + Limits.getLimitApexPaginationCursorRows();
-        Database.PaginationCursor cursor =
-            Database.getPaginationCursorWithBinds(
-                soql,
-                binds,
-                AccessLevel.USER_MODE
-            );
-        return fetchPage(cursor, position, pageSize);
-    }
-
-    /**
-     * Returns the current customer's shared requests in USER_MODE because this data
-     * is rendered directly in the authenticated portal. Sharing Sets, CRUD, FLS and
-     * restriction rules must all be honored.
-     */
-    public static RecordPage selectSharedWithMe(Integer pageSize, Integer position) {
-        String soql =
-            'SELECT Id, Name, CreatedDate, Status__c, ' +
-            'Estimated_Refund__c, Actual_Refund__c ' +
-            'FROM Return_Request__c ' +
-            'ORDER BY CreatedDate DESC ' +
-            'LIMIT ' + Limits.getLimitApexPaginationCursorRows();
-        Database.PaginationCursor cursor =
-            Database.getPaginationCursorWithBinds(
-                soql,
-                new Map<String, Object>(),
-                AccessLevel.USER_MODE
-            );
-        return fetchPage(
-            cursor,
-            position == null ? 0 : Math.max(0, position),
-            normalizePageSize(pageSize)
-        );
-    }
-
-    /**
-     * Returns an allowlisted portal detail in USER_MODE because the result is
-     * displayed directly to the current customer. The query intentionally excludes
-     * customer identity, internal notes and refund-operational fields.
-     */
-    public static Return_Request__c selectPortalDetail(Id requestId) {
-        if (requestId == null) {
-            return null;
-        }
-        String soql =
-            'SELECT Id, Name, Status__c, ' +
-            '(SELECT Id, Product__r.Name, Quantity__c ' +
-            'FROM Return_Request_Lines__r ORDER BY Name), ' +
-            '(SELECT Id, To_Status__c, Changed_At__c ' +
-            'FROM Return_Request_Histories__r ' +
-            'ORDER BY Changed_At__c, Name) ' +
-            'FROM Return_Request__c WHERE Id = :requestId LIMIT 1';
-        List<Return_Request__c> rows =
-            (List<Return_Request__c>) Database.queryWithBinds(
-                soql,
-                new Map<String, Object>{ 'requestId' => requestId },
-                AccessLevel.USER_MODE
-            );
-        return rows.isEmpty() ? null : rows[0];
-    }
-
-    /**
-     * Searches customer-service-visible request data in USER_MODE because the
-     * results are rendered directly to a CSKH user. CRUD, FLS, record sharing and
-     * restriction rules must determine both searchable fields and returned rows.
-     */
-    public static List<Return_Request__c> searchForCustomerService(
-        String searchTerm,
-        Integer maximumRows
-    ) {
-        if (String.isBlank(searchTerm)) {
-            return new List<Return_Request__c>();
-        }
-        Integer rowLimit = maximumRows == null
-            ? 50
-            : Math.max(1, Math.min(maximumRows, 200));
-        String likeTerm = '%' + searchTerm.trim() + '%';
-        String soql =
-            'SELECT Id, Name, CreatedDate, Status__c, Channel__c, ' +
-            'Account__r.Name, Account__r.Phone, Order__r.OrderNumber, ' +
-            'Store__r.Name, Estimated_Refund__c, Actual_Refund__c, ' +
-            'Approval_Level__c, Assigned_Approver__r.Name, LastModifiedDate ' +
-            'FROM Return_Request__c ' +
-            'WHERE Name LIKE :likeTerm ' +
-            'OR Account__r.Name LIKE :likeTerm ' +
-            'OR Account__r.Phone LIKE :likeTerm ' +
-            'OR Order__r.OrderNumber LIKE :likeTerm ' +
-            'ORDER BY CreatedDate DESC LIMIT :rowLimit';
-        return (List<Return_Request__c>) Database.queryWithBinds(
-            soql,
-            new Map<String, Object>{
-                'likeTerm' => likeTerm,
-                'rowLimit' => rowLimit
-            },
-            AccessLevel.USER_MODE
-        );
-    }
-
-    public static Boolean isSharedWithMe(Id requestId) {
-        if (requestId == null) {
-            return false;
-        }
-        List<Return_Request__c> rows =
-            (List<Return_Request__c>) Database.queryWithBinds(
-                'SELECT Id FROM Return_Request__c ' +
-                'WHERE Id = :requestId LIMIT 1',
-                new Map<String, Object>{ 'requestId' => requestId },
-                AccessLevel.USER_MODE
-            );
-        return !rows.isEmpty();
-    }
-
-    public static Map<Id, Return_Request__c> selectByIds(Set<Id> requestIds) {
-        if (requestIds == null || requestIds.isEmpty()) {
-            return new Map<Id, Return_Request__c>();
-        }
-        List<Return_Request__c> rows =
-            (List<Return_Request__c>) Database.queryWithBinds(
-                ACTION_FIELDS + ' WHERE Id IN :requestIds',
-                new Map<String, Object>{ 'requestIds' => requestIds },
-                AccessLevel.USER_MODE
-            );
-        return new Map<Id, Return_Request__c>(rows);
-    }
-
-    private static Map<Id, Return_Request__c> selectActionRecords(
-        Set<Id> requestIds,
-        Boolean forUpdate
-    ) {
-        if (requestIds == null || requestIds.isEmpty()) {
-            return new Map<Id, Return_Request__c>();
-        }
-        String soql = ACTION_FIELDS + ' WHERE Id IN :requestIds';
-        AccessLevel mode = AccessLevel.USER_MODE;
-        if (forUpdate == true) {
-            soql += ' FOR UPDATE';
-            mode = AccessLevel.SYSTEM_MODE;
-        }
-        List<Return_Request__c> rows =
-            (List<Return_Request__c>) Database.queryWithBinds(
-                soql,
-                new Map<String, Object>{ 'requestIds' => requestIds },
-                mode
-            );
-        return new Map<Id, Return_Request__c>(rows);
-    }
-
-    private static RecordPage fetchPage(
-        Database.PaginationCursor cursor,
-        Integer position,
-        Integer pageSize
-    ) {
-        RecordPage page = new RecordPage();
-        page.total = cursor.getNumRecords();
-        if (position >= 0 && position < page.total) {
-            Integer remaining = page.total - position;
-            Integer fetchSize = Math.min(pageSize, remaining);
-            for (SObject row : cursor.fetchPage(position, fetchSize).getRecords()) {
-                page.records.add((Return_Request__c) row);
-            }
-        }
-        return page;
-    }
-
-    private static Integer normalizePageSize(Integer pageSize) {
-        if (pageSize == null) {
-            return 25;
-        }
-        return Math.max(1, Math.min(pageSize, 200));
-    }
 }
