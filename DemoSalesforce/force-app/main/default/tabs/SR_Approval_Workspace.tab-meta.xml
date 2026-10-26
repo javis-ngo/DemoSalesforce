@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomTab xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>D.2 – Màn hình duyệt yêu cầu cho CHT / QLV</description>
+    <flexiPage>SR_Approval_Workspace</flexiPage>
+    <label>Duyệt yêu cầu</label>
+    <motif>Custom78: Map</motif>
+</CustomTab>

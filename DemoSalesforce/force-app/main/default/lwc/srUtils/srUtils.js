@@ -27,6 +27,13 @@ export const STATUS_OPTIONS = [
     { label: 'Đã hủy', value: 'CANCELLED' }
 ];
 
+// Cấp duyệt dự kiến (Approval_Level__c) hiển thị ở D.1
+export const LEVEL_LABELS = {
+    AUTO: 'Tự động duyệt',
+    CHT: 'Cửa hàng trưởng duyệt',
+    QLV: 'Quản lý vùng duyệt'
+};
+
 export function labelOf(options, value) {
     const found = options.find((o) => o.value === value);
     return found ? found.label : value;
@@ -56,15 +63,6 @@ export function formatDate(isoDate) {
     }
     const [y, m, d] = String(isoDate).substring(0, 10).split('-');
     return `${d}/${m}/${y}`;
-}
-
-// Tiền hoàn của 1 dòng, làm tròn xuống 1.000đ – giống SR_Util.refundAmount (BR-05, B.2).
-// Chỉ để hiển thị; số tiền chính thức luôn do Apex tính lại khi lưu.
-export function refundAmount(unitPrice, quantity, ratePercent) {
-    if (!unitPrice || !quantity || !ratePercent) {
-        return 0;
-    }
-    return Math.floor((unitPrice * quantity * ratePercent) / 100 / 1000) * 1000;
 }
 
 // Lấy câu lỗi dễ đọc từ lỗi trả về khi gọi Apex

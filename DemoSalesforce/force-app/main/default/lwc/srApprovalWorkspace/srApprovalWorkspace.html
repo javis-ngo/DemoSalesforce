@@ -34,6 +34,20 @@
             <p class="slds-text-color_error slds-p-horizontal_medium">{errorMessage}</p>
         </template>
 
+        <!-- Kết quả duyệt hàng loạt: MSG-11 và lý do của từng dòng lỗi -->
+        <template lwc:if={hasDecisionErrors}>
+            <div class="slds-p-horizontal_medium slds-m-bottom_small">
+                <div class="slds-box slds-box_x-small slds-theme_shade">
+                    <p class="slds-text-title_bold">{decisionSummary}</p>
+                    <ul class="slds-list_dotted slds-m-top_xx-small">
+                        <template for:each={decisionErrors} for:item="err">
+                            <li key={err.key} class="slds-text-color_error">{err.text}</li>
+                        </template>
+                    </ul>
+                </div>
+            </div>
+        </template>
+
         <div class="slds-p-horizontal_medium">
             <lightning-datatable
                 key-field="id"

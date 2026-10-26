@@ -56,7 +56,7 @@ private class SR_UiControllerTest {
     @IsTest
     static void inspectionMovesRequestToRefund() {
         Id requestId = createSmallCounterRequest();
-        SR_DTO.InspectionData data = SR_ReturnUiController.getInspectionData(requestId);
+        SR_RequestPageService.InspectionData data = SR_ReturnUiController.getInspectionData(requestId);
         Assert.isTrue(data.canInspect);
 
         String results = JSON.serialize(new List<Object>{ new Map<String, Object>{
@@ -71,11 +71,41 @@ private class SR_UiControllerTest {
         Assert.isTrue(status == 'REFUND_PROCESSING' || status == 'COMPLETED', status);
     }
 
+    // D.3: giữ nguyên tình trạng thì tiền dòng bằng tiền dự kiến; tiền do Apex tính, không tính trong JS
+    @IsTest
+    static void lineRefundComesFromService() {
+        Id requestId = createSmallCounterRequest();
+        SR_RequestPageService.InspectionLine line = SR_ReturnUiController.getInspectionData(requestId).lines[0];
+        Assert.areEqual(line.estimatedRefund, SR_ReturnUiController.calcLineRefund(line.lineId, line.declaredCondition));
+    }
+
+    // Yêu cầu tại quầy tự duyệt đã ở Inspecting: không còn nút Nhận hàng / Hủy, gọi thẳng thì báo MSG-20
+    @IsTest
+    static void receiveAndCancelBlockedWhenInspecting() {
+        Id requestId = createSmallCounterRequest();
+        SR_RequestPageService.ActionState state = SR_ReturnUiController.getActionState(requestId);
+        Assert.isFalse(state.canReceiveGoods);
+        Assert.isFalse(state.canCancel);
+        String msg20Start = System.Label.SR_MSG_20.substringBefore('{0}');
+        try {
+            SR_ReturnUiController.receiveGoods(requestId);
+            Assert.fail('Phải báo MSG-20 khi nhận hàng');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().startsWith(msg20Start), e.getMessage());
+        }
+        try {
+            SR_ReturnUiController.cancelRequest(requestId, 'Khách đổi ý');
+            Assert.fail('Phải báo MSG-20 khi hủy');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().startsWith(msg20Start), e.getMessage());
+        }
+    }
+
     // D.3: Không đạt mà thiếu ghi chú → MSG-21
     @IsTest
     static void failedLineNeedsNote() {
         Id requestId = createSmallCounterRequest();
-        SR_DTO.InspectionData data = SR_ReturnUiController.getInspectionData(requestId);
+        SR_RequestPageService.InspectionData data = SR_ReturnUiController.getInspectionData(requestId);
         String results = JSON.serialize(new List<Object>{ new Map<String, Object>{
             'lineId' => data.lines[0].lineId, 'result' => 'FAILED', 'actualCondition' => 'USED', 'note' => ''
         } });
@@ -84,6 +114,35 @@ private class SR_UiControllerTest {
             Assert.fail('Phải báo MSG-21');
         } catch (AuraHandledException e) {
             Assert.areEqual(System.Label.SR_MSG_21, e.getMessage());
+        }
+    }
+
+    // Khách portal lỡ vào trang yêu cầu: không trả dữ liệu, báo Unauthorized kèm link Portal; gọi thẳng Apex cũng bị chặn
+    @IsTest
+    static void portalUserIsUnauthorized() {
+        Id requestId = createSmallCounterRequest();
+        SR_RequestPageService.userType = 'PowerCustomerSuccess';
+
+        SR_RequestPageService.InspectionData data = SR_ReturnUiController.getInspectionData(requestId);
+        Assert.isTrue(data.unauthorized);
+        Assert.isFalse(data.canInspect);
+        Assert.isTrue(data.lines.isEmpty());
+        Assert.areEqual(System.Label.SR_Portal_Url, data.portalUrl);
+
+        SR_RequestPageService.ActionState state = SR_ReturnUiController.getActionState(requestId);
+        Assert.isFalse(state.canReceiveGoods || state.canCancel);
+
+        try {
+            SR_ReturnUiController.completeInspection(requestId, '[]');
+            Assert.fail('Khách portal không được hoàn tất kiểm định');
+        } catch (AuraHandledException e) {
+            Assert.areEqual(System.Label.SR_ERR_UNAUTHORIZED, e.getMessage());
+        }
+        try {
+            SR_ReturnUiController.receiveGoods(requestId);
+            Assert.fail('Khách portal không được nhận hàng');
+        } catch (AuraHandledException e) {
+            Assert.areEqual(System.Label.SR_ERR_UNAUTHORIZED, e.getMessage());
         }
     }
 

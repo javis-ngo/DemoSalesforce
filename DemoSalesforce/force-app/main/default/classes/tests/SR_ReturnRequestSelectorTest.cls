@@ -27,6 +27,18 @@ private class SR_ReturnRequestSelectorTest {
         Assert.isTrue(beyond.records.isEmpty(), 'Quá trang cuối thì trả rỗng, không lỗi');
     }
 
+    // D.3 + D.4: truy vấn chi tiết đọc được yêu cầu kèm danh sách dòng con (tên relationship đúng trên org)
+    @IsTest
+    static void detailQueriesIncludeChildLists() {
+        Id requestId = [SELECT Id FROM Return_Request__c LIMIT 1].Id;
+        Return_Request__c forInspection = SR_ReturnRequestSelector.selectForInspection(requestId);
+        Return_Request__c forPortal = SR_ReturnRequestSelector.selectPortalDetail(requestId);
+        Assert.areEqual('NEW', forInspection.Status__c);
+        Assert.isTrue(forInspection.Return_Request_Lines__r.isEmpty(), 'Yêu cầu test không có dòng');
+        Assert.areEqual(requestId, forPortal.Id);
+        Assert.areEqual('NEW', SR_ReturnRequestSelector.selectById(requestId).Status__c);
+    }
+
     // Hàng chờ duyệt: tổng số dòng lấy luôn từ cursor, không cần query COUNT riêng
     @IsTest
     static void approvalQueueReturnsTotalAndPage() {

@@ -1,17 +1,22 @@
 import { LightningElement, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import { subscribe, unsubscribe, onError } from 'lightning/empApi';
+import { subscribe, unsubscribe, onError, isEmpEnabled } from 'lightning/empApi';
 import LightningPrompt from 'lightning/prompt';
 import getMyStores from '@salesforce/apex/SR_ApprovalUiController.getMyStores';
 import getQueue from '@salesforce/apex/SR_ApprovalUiController.getQueue';
 import decide from '@salesforce/apex/SR_ApprovalUiController.decide';
+import MSG_11 from '@salesforce/label/c.SR_MSG_11';
 import MSG_12 from '@salesforce/label/c.SR_MSG_12';
 import MSG_30 from '@salesforce/label/c.SR_MSG_30';
 import MSG_31 from '@salesforce/label/c.SR_MSG_31';
+import { msgFromError } from 'c/srMessages';
 import { STATUS_OPTIONS, formatLabel, vnd, reduceErrors } from 'c/srUtils';
 
-const CHANNEL = '/event/SR_UI_Notice__e';
+const CHANNEL = '/event/Return_Request_Event__e';
 const PAGE_SIZE = 50;
+// Mất kết nối: subscribe lại sau 5 giây, lỗi tiếp thì chờ gấp đôi, tối đa 1 phút
+const RETRY_MIN_MS = 5000;
+const RETRY_MAX_MS = 60000;
 
 function isoDay(date) {
     const d = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -48,7 +53,13 @@ export default class SrApprovalWorkspace extends LightningElement {
     sortedBy = 'waitingHours';
     sortedDirection = 'desc';
     pageNumber = 1;
+    decisionSummary;
+    decisionErrors = [];
     subscription;
+    realtimeOn = false;
+    errorListenerAdded = false;
+    retryDelay = RETRY_MIN_MS;
+    retryTimer;
 
     filters = {
         status: 'PENDING_APPROVAL',
@@ -71,17 +82,19 @@ export default class SrApprovalWorkspace extends LightningElement {
 
     connectedCallback() {
         this.load();
-        this.subscribeRealtime();
+        this.startRealtime();
     }
 
     disconnectedCallback() {
-        if (this.subscription) {
-            unsubscribe(this.subscription);
-        }
+        this.stopRealtime();
     }
 
     get noSelection() {
         return this.selectedIds.length === 0;
+    }
+
+    get hasDecisionErrors() {
+        return this.decisionErrors.length > 0;
     }
 
     get pageCount() {
@@ -132,6 +145,7 @@ export default class SrApprovalWorkspace extends LightningElement {
         const value = field === 'onlyMine' ? event.target.checked : event.detail.value;
         this.filters = { ...this.filters, [field]: value };
         this.pageNumber = 1;
+        this.decisionErrors = [];
         this.load();
     }
 
@@ -176,13 +190,23 @@ export default class SrApprovalWorkspace extends LightningElement {
     }
 
     async submitDecision(approve, reason) {
-        const items = this.rows
-            .filter((r) => this.selectedIds.includes(r.id))
-            .map((r) => ({ requestId: r.id, lastModified: r.lastModified }));
+        const selected = this.rows.filter((r) => this.selectedIds.includes(r.id));
+        const numberOf = new Map(selected.map((r) => [r.id, r.requestNumber]));
+        const items = selected.map((r) => ({ requestId: r.id, lastModified: r.lastModified }));
+        this.decisionErrors = [];
         this.isLoading = true;
         try {
             const result = await decide({ itemsJson: JSON.stringify(items), approve, reason });
-            this.toast(result.summary, result.errors.length === 0 ? 'success' : 'warning');
+            // MSG-11 (số thành công / tổng) + lý do của từng dòng lỗi (MSG-10, MSG-13…)
+            const errors = result.errors || [];
+            const succeeded = result.succeeded ?? items.length - errors.length;
+            this.decisionSummary = result.summary || formatLabel(MSG_11, succeeded, items.length, errors.length);
+            this.decisionErrors = errors.map((e, index) => {
+                const requestNumber = e.requestNumber || numberOf.get(e.requestId);
+                const text = msgFromError(e);
+                return { key: String(index), text: requestNumber ? `${requestNumber}: ${text}` : text };
+            });
+            this.toast(this.decisionSummary, errors.length === 0 ? 'success' : 'warning');
         } catch (e) {
             this.toast(reduceErrors(e), 'error');
         } finally {
@@ -192,25 +216,73 @@ export default class SrApprovalWorkspace extends LightningElement {
     }
 
     // FR-09: hoàn tiền xong/lỗi → hiện thông báo góc màn hình, không cần tải lại trang
+    async startRealtime() {
+        this.realtimeOn = true;
+        if (!this.errorListenerAdded) {
+            onError((error) => this.handleRealtimeError(error));
+            this.errorListenerAdded = true;
+        }
+        if (await isEmpEnabled()) {
+            this.subscribeRealtime();
+        }
+    }
+
+    stopRealtime() {
+        this.realtimeOn = false;
+        clearTimeout(this.retryTimer);
+        if (this.subscription) {
+            unsubscribe(this.subscription);
+            this.subscription = undefined;
+        }
+    }
+
     subscribeRealtime() {
-        onError((error) => {
-            // eslint-disable-next-line no-console
-            console.error('empApi error', JSON.stringify(error));
-        });
-        subscribe(CHANNEL, -1, (message) => {
-            const p = message.data.payload;
-            if (!this.myStoreCodes.includes(p.Store_Code__c)) {
-                return;
+        subscribe(CHANNEL, -1, (message) => this.handleEvent(message.data.payload))
+            .then((sub) => {
+                if (!this.realtimeOn) {
+                    unsubscribe(sub); // đã rời trang trong lúc chờ subscribe
+                    return;
+                }
+                this.subscription = sub;
+                this.retryDelay = RETRY_MIN_MS;
+            })
+            .catch((error) => this.handleRealtimeError(error));
+    }
+
+    // Mất kết nối: bỏ subscription cũ, subscribe lại sau một lúc và làm mới bảng để không sót thay đổi
+    handleRealtimeError(error) {
+        console.error('empApi error', JSON.stringify(error));
+        if (!this.realtimeOn) {
+            return;
+        }
+        if (this.subscription) {
+            unsubscribe(this.subscription);
+            this.subscription = undefined;
+        }
+        clearTimeout(this.retryTimer);
+        // eslint-disable-next-line @lwc/lwc/no-async-operation
+        this.retryTimer = setTimeout(() => {
+            if (this.realtimeOn) {
+                this.subscribeRealtime();
+                this.load();
             }
-            if (p.Result__c === 'COMPLETED') {
-                this.toast(formatLabel(MSG_30, p.Request_Number__c, vnd(p.Amount__c)), 'success');
-            } else {
-                this.toast(formatLabel(MSG_31, p.Request_Number__c), 'warning');
-            }
-            this.load();
-        }).then((sub) => {
-            this.subscription = sub;
-        });
+        }, this.retryDelay);
+        this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_MS);
+    }
+
+    // Chỉ event của cửa hàng mình; event có Result__c khác (dùng chung với POS/App) thì bỏ qua
+    handleEvent(p) {
+        if (!this.myStoreCodes.includes(p.Store_Code__c)) {
+            return;
+        }
+        if (p.Result__c === 'COMPLETED') {
+            this.toast(formatLabel(MSG_30, p.Request_Number__c, vnd(p.Amount__c)), 'success');
+        } else if (p.Result__c === 'REFUND_FAILED') {
+            this.toast(formatLabel(MSG_31, p.Request_Number__c), 'warning');
+        } else {
+            return;
+        }
+        this.load();
     }
 
     toast(message, variant) {

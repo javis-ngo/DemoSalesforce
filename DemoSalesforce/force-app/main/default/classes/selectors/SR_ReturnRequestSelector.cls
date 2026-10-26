@@ -1,5 +1,6 @@
 /**
- * Selector cho Return_Request__c: gom truy vấn yêu cầu trả hàng của màn hình duyệt (D.2) và Customer Portal (D.4).
+ * Selector cho Return_Request__c: gom truy vấn yêu cầu trả hàng của màn hình duyệt (D.2), trang yêu cầu (D.3)
+ * và Customer Portal (D.4).
  *  - "inherited sharing": chạy theo sharing của class gọi.
  *  - Truy vấn "của tôi" cho khách đăng nhập LUÔN áp sharing (USER_MODE trong class con with sharing SharedWithMe),
  *    vì không có điều kiện lọc theo khách: chỉ Sharing Set giới hạn kết quả.
@@ -38,13 +39,36 @@ public inherited sharing class SR_ReturnRequestSelector {
         ];
     }
 
-    // Chỉ các field Portal được hiện (BR-17): trạng thái, lịch sử, tên + số lượng sản phẩm
+    // Chỉ các field Portal được hiện (BR-17): trạng thái, lịch sử, tên + số lượng sản phẩm.
+    // Thời điểm đổi trạng thái lấy theo CreatedDate của dòng lịch sử (ghi ngay lúc đổi).
     public static Return_Request__c selectPortalDetail(Id requestId) {
         return [
             SELECT Id, Name, Status__c,
-                   (SELECT Id, Product__r.Name, Quantity__c FROM Return_Request_Lines__r ORDER BY Name),
-                   (SELECT Id, To_Status__c, Changed_At__c FROM Return_Request_Histories__r ORDER BY Changed_At__c, Name)
+                   (SELECT Id, Order_Product__r.Product2.Name, Quantity__c FROM Return_Request_Lines__r ORDER BY Name),
+                   (SELECT Id, To_Status__c, CreatedDate FROM Return_Request_Histories__r ORDER BY CreatedDate, Name)
             FROM Return_Request__c WHERE Id = :requestId
+        ];
+    }
+
+    // ---------- Trang yêu cầu (D.3): USER_MODE ----------
+
+    // Trạng thái hiện tại, để kiểm tra trước khi bấm Nhận hàng / Hủy
+    public static Return_Request__c selectById(Id requestId) {
+        return [
+            SELECT Id, Name, Status__c FROM Return_Request__c WHERE Id = :requestId WITH USER_MODE
+        ];
+    }
+
+    // Yêu cầu kèm các dòng để kiểm định
+    public static Return_Request__c selectForInspection(Id requestId) {
+        return [
+            SELECT Id, Name, Status__c,
+                   (SELECT Id, Order_Product__r.Product2.Name, Order_Product__r.Product2.ProductCode, Quantity__c,
+                           Reason__c, Declared_Condition__c, Estimated_Refund__c, Actual_Refund__c,
+                           Inspection_Result__c, Inspection_Note__c
+                    FROM Return_Request_Lines__r ORDER BY Name)
+            FROM Return_Request__c WHERE Id = :requestId
+            WITH USER_MODE
         ];
     }
 

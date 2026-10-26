@@ -156,7 +156,7 @@ for (List<String> r : roles) {
     if (u == null) {
         String fallback = (r[0].startsWith('cht') || r[0].startsWith('qlv'))
             ? 'admin (người chạy script) đóng vai này, seed 2 gán admin làm CHT/QLV'
-            : 'test vai này bằng seed-doi-vai.apex (đổi permission set cho 1 user test)';
+            : 'đổi vai 1 user test sang vai này: npm run seed:doi-vai -- <VAI> (xem seed-doi-vai.apex)';
         System.debug('SEED | ' + r[1] + ' → THIẾU LICENSE: ' + fallback);
         continue;
     }

@@ -1,0 +1,24 @@
+<template>
+    <lightning-quick-action-panel header="Xác nhận đã hoàn tiền thủ công">
+        <p class="slds-m-bottom_small">
+            Chỉ dùng khi Kế toán đã hoàn tiền cho khách ngoài hệ thống. Yêu cầu sẽ chuyển sang Hoàn tất.
+        </p>
+        <lightning-input
+            label="Mã giao dịch PayHub"
+            value={transactionId}
+            max-length="100"
+            onchange={handleChange}
+            required
+        ></lightning-input>
+        <div slot="footer">
+            <lightning-button label="Hủy" onclick={close}></lightning-button>
+            <lightning-button
+                class="slds-m-left_x-small"
+                variant="brand"
+                label="Xác nhận"
+                onclick={submit}
+                disabled={isSubmitDisabled}
+            ></lightning-button>
+        </div>
+    </lightning-quick-action-panel>
+</template>

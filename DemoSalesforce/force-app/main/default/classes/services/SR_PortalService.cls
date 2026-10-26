@@ -85,17 +85,17 @@ public without sharing class SR_PortalService {
         res.found = true;
         res.requestNumber = r.Name;
         res.statusLabel = SR_StatusMachine.labelOf(r.Status__c);
-        for (Return_Request_History__c h : r.Histories__r) {
+        for (Return_Request_History__c h : r.Return_Request_Histories__r) {
             HistoryItem hi = new HistoryItem();
             hi.key = h.Id;
             hi.statusLabel = SR_StatusMachine.labelOf(h.To_Status__c);
-            hi.changedAt = h.Changed_At__c.format('dd/MM/yyyy HH:mm', 'Asia/Ho_Chi_Minh');
+            hi.changedAt = h.CreatedDate.format('dd/MM/yyyy HH:mm', 'Asia/Ho_Chi_Minh');
             res.history.add(hi);
         }
-        for (Return_Request_Line__c l : r.Lines__r) {
+        for (Return_Request_Line__c l : r.Return_Request_Lines__r) {
             ProductItem pi = new ProductItem();
             pi.key = l.Id;
-            pi.name = l.Product__r?.Name;
+            pi.name = l.Order_Product__r?.Product2?.Name;
             pi.quantity = l.Quantity__c;
             res.products.add(pi);
         }

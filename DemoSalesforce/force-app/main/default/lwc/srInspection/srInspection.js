@@ -1,30 +1,36 @@
 import { LightningElement, api } from 'lwc';
+import { NavigationMixin } from 'lightning/navigation';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 import LightningConfirm from 'lightning/confirm';
-import LightningPrompt from 'lightning/prompt';
 import getInspectionData from '@salesforce/apex/SR_ReturnUiController.getInspectionData';
+import calcLineRefund from '@salesforce/apex/SR_ReturnUiController.calcLineRefund';
 import completeInspection from '@salesforce/apex/SR_ReturnUiController.completeInspection';
-import receiveGoods from '@salesforce/apex/SR_ReturnUiController.receiveGoods';
-import cancelRequest from '@salesforce/apex/SR_ReturnUiController.cancelRequest';
 import MSG_21 from '@salesforce/label/c.SR_MSG_21';
-import { CONDITION_OPTIONS, labelOf, vnd, refundAmount, reduceErrors } from 'c/srUtils';
+import MSG_22 from '@salesforce/label/c.SR_MSG_22';
+import ERR_UNAUTHORIZED from '@salesforce/label/c.SR_ERR_UNAUTHORIZED';
+import { REASON_OPTIONS, CONDITION_OPTIONS, labelOf, vnd, reduceErrors } from 'c/srUtils';
 
 const RESULT_OPTIONS = [
     { label: 'Đạt', value: 'PASSED' },
     { label: 'Không đạt', value: 'FAILED' }
 ];
 
-// D.3 – Kiểm định hàng (FR-10) + nút Nhận hàng / Hủy. Đặt trên trang Return Request. Owner: Dev C
-export default class SrInspection extends LightningElement {
+// D.3 – Kiểm định hàng (FR-10). Đặt trên trang Return Request: trang chỉ hiện component khi Inspecting,
+// component tự ẩn khi đã hoàn tất kiểm định. Nút Nhận hàng / Hủy nằm ở srRequestActions. Owner: Dev C
+// Tiền dòng luôn do Apex tính (calcLineRefund của Đức); JS chỉ cộng các dòng Đạt để hiện tổng.
+// Khách portal lỡ vào trang: Apex trả unauthorized, component báo không có quyền và cho về Portal.
+export default class SrInspection extends NavigationMixin(LightningElement) {
     @api recordId;
     data = {};
     lines = [];
-    rates = {};
     errorMessage;
     isBusy = false;
     resultOptions = RESULT_OPTIONS;
     conditionOptions = CONDITION_OPTIONS;
+    msg22 = MSG_22;
+    unauthorizedMessage = ERR_UNAUTHORIZED;
+    calcSeq = 0; // số thứ tự lần tính tiền, để bỏ kết quả của lần gọi cũ
 
     connectedCallback() {
         this.load();
@@ -34,15 +40,14 @@ export default class SrInspection extends LightningElement {
         this.isBusy = true;
         try {
             const d = await getInspectionData({ requestId: this.recordId });
-            this.data = d;
-            this.rates = d.rates || {};
             this.lines = d.lines.map((l) =>
-                this.recalc({
+                this.withRefund({
                     ...l,
-                    result: l.result === 'NOT_INSPECTED' ? null : l.result,
+                    reasonLabel: labelOf(REASON_OPTIONS, l.reason),
                     declaredConditionLabel: labelOf(CONDITION_OPTIONS, l.declaredCondition)
                 })
             );
+            this.data = d;
             this.errorMessage = undefined;
         } catch (e) {
             this.errorMessage = reduceErrors(e);
@@ -51,8 +56,22 @@ export default class SrInspection extends LightningElement {
         }
     }
 
+    // Đã hoàn tất kiểm định thì ẩn hẳn; đang tải, lỗi hoặc không có quyền thì vẫn hiện để người dùng biết
+    get isVisible() {
+        return this.isBusy || !!this.errorMessage || !!this.data.unauthorized || !!this.data.canInspect;
+    }
+
+    handleBackToPortal() {
+        this[NavigationMixin.Navigate]({ type: 'standard__webPage', attributes: { url: this.data.portalUrl } }, true);
+    }
+
     get hasLines() {
         return this.lines.length > 0;
+    }
+
+    // MSG-22: còn dòng chưa chọn Đạt / Không đạt thì nút Hoàn tất bị tắt, hiện câu nhắc bên cạnh
+    get showResultHint() {
+        return !!this.data.canInspect && this.lines.some((l) => !l.result);
     }
 
     get readOnly() {
@@ -75,8 +94,20 @@ export default class SrInspection extends LightningElement {
         this.updateLine(event.target.dataset.id, { result: event.detail.value });
     }
 
-    handleCondition(event) {
-        this.updateLine(event.target.dataset.id, { actualCondition: event.detail.value });
+    // Đổi tình trạng thực tế → Apex tính lại tiền dòng theo Phụ lục B.2
+    async handleCondition(event) {
+        const lineId = event.target.dataset.id;
+        const actualCondition = event.detail.value;
+        const previous = this.lines.find((l) => l.lineId === lineId).actualCondition;
+        const seq = ++this.calcSeq;
+        this.updateLine(lineId, { actualCondition, calcSeq: seq, calculating: true });
+        try {
+            const actualRefund = await calcLineRefund({ lineId, actualCondition });
+            this.updateIfLatest(lineId, seq, { actualRefund, calculating: false });
+        } catch (e) {
+            this.updateIfLatest(lineId, seq, { actualCondition: previous, calculating: false });
+            this.toast(reduceErrors(e), 'error');
+        }
     }
 
     handleNote(event) {
@@ -84,14 +115,26 @@ export default class SrInspection extends LightningElement {
     }
 
     updateLine(lineId, changes) {
-        this.lines = this.lines.map((l) => (l.lineId === lineId ? this.recalc({ ...l, ...changes }) : l));
+        this.lines = this.lines.map((l) => (l.lineId === lineId ? this.withRefund({ ...l, ...changes }) : l));
     }
 
-    // Đổi tình trạng → tính lại tiền ngay theo Phụ lục B.2; dòng Không đạt = 0đ
-    recalc(line) {
-        const rate = this.rates[`${line.reason}|${line.actualCondition}`] || 0;
-        const refund = line.result === 'PASSED' ? refundAmount(line.unitPrice, line.quantity, rate) : 0;
-        return { ...line, refund, refundText: vnd(refund), noteRequired: line.result === 'FAILED' };
+    // Người dùng đã đổi tình trạng lần nữa thì bỏ kết quả của lần tính trước
+    updateIfLatest(lineId, seq, changes) {
+        const line = this.lines.find((l) => l.lineId === lineId);
+        if (line && line.calcSeq === seq) {
+            this.updateLine(lineId, changes);
+        }
+    }
+
+    // Chỉ dòng Đạt được hoàn tiền; dòng Không đạt hoặc chưa chọn = 0đ
+    withRefund(line) {
+        const refund = line.result === 'PASSED' ? line.actualRefund || 0 : 0;
+        return {
+            ...line,
+            refund,
+            refundText: line.calculating ? 'Đang tính…' : vnd(refund),
+            noteRequired: line.result === 'FAILED'
+        };
     }
 
     async handleComplete() {
@@ -116,22 +159,6 @@ export default class SrInspection extends LightningElement {
         }));
         await this.run(() => completeInspection({ requestId: this.recordId, resultsJson: JSON.stringify(results) }),
             'Đã hoàn tất kiểm định');
-    }
-
-    async handleReceive() {
-        await this.run(() => receiveGoods({ requestId: this.recordId }), 'Đã nhận hàng, chuyển sang kiểm định');
-    }
-
-    async handleCancel() {
-        const reason = await LightningPrompt.open({
-            message: 'Nhập lý do hủy yêu cầu',
-            label: 'Hủy yêu cầu',
-            theme: 'warning'
-        });
-        if (!reason) {
-            return;
-        }
-        await this.run(() => cancelRequest({ requestId: this.recordId, reason }), 'Đã hủy yêu cầu');
     }
 
     // Gọi Apex, báo kết quả, tải lại dữ liệu và làm mới các component chuẩn trên trang

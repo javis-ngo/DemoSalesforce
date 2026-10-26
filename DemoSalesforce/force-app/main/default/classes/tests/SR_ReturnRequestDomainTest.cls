@@ -55,6 +55,33 @@ private class SR_ReturnRequestDomainTest {
             new Return_Request__c(Status__c = 'AWAITING_GOODS', Approval_Due_At__c = now.addHours(-1)), now), 'Đã duyệt xong');
     }
 
+    // D.3: Nhận hàng chỉ khi chờ mang hàng; Hủy chỉ từ New / Pending Approval / Awaiting Goods (OI-07)
+    @IsTest
+    static void requestPageButtonsFollowStatus() {
+        Assert.isTrue(SR_ReturnRequestDomain.canReceiveGoods(new Return_Request__c(Status__c = 'AWAITING_GOODS')));
+        Assert.isFalse(SR_ReturnRequestDomain.canReceiveGoods(new Return_Request__c(Status__c = 'INSPECTING')));
+        for (String status : new List<String>{ 'NEW', 'PENDING_APPROVAL', 'AWAITING_GOODS' }) {
+            Assert.isTrue(SR_ReturnRequestDomain.canCancel(new Return_Request__c(Status__c = status)), status);
+        }
+        for (String status : new List<String>{ 'INSPECTING', 'REFUND_PROCESSING', 'COMPLETED', 'CANCELLED' }) {
+            Assert.isFalse(SR_ReturnRequestDomain.canCancel(new Return_Request__c(Status__c = status)), status);
+        }
+    }
+
+    // D.3: chỉ kiểm định khi đang Inspecting và còn dòng chưa có kết quả
+    @IsTest
+    static void inspectOnlyWhileLinesPending() {
+        Return_Request__c inspecting = new Return_Request__c(Status__c = 'INSPECTING');
+        Return_Request_Line__c pending = new Return_Request_Line__c(Inspection_Result__c = 'NOT_INSPECTED');
+        Return_Request_Line__c passed = new Return_Request_Line__c(Inspection_Result__c = 'PASSED');
+        Assert.isTrue(SR_ReturnRequestDomain.canInspect(inspecting, new List<Return_Request_Line__c>{ passed, pending }));
+        Assert.isFalse(SR_ReturnRequestDomain.canInspect(inspecting, new List<Return_Request_Line__c>{ passed }),
+            'Đã hoàn tất kiểm định');
+        Assert.isFalse(SR_ReturnRequestDomain.canInspect(
+            new Return_Request__c(Status__c = 'AWAITING_GOODS'), new List<Return_Request_Line__c>{ pending }), 'Chưa nhận hàng');
+        Assert.isFalse(SR_ReturnRequestDomain.isInspected(new Return_Request_Line__c()), 'Chưa có kết quả');
+    }
+
     @IsTest
     static void riskyFollowsAccountFlag() {
         Assert.isTrue(SR_ReturnRequestDomain.isRiskyCustomer(

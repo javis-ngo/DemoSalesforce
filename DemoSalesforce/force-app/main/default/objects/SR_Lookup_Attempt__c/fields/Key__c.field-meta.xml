@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Key__c</fullName>
+    <description>Mã yêu cầu khách đã nhập khi tra cứu sai; SR_LookupAttemptSelector đếm số lần sai theo field này.</description>
+    <externalId>false</externalId>
+    <label>Mã yêu cầu đã nhập</label>
+    <length>80</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>
