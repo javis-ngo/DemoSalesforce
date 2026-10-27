@@ -150,7 +150,6 @@ private class SR_ApprovalServiceTest {
             ? null
             : String.valueOf(requestRow.LastModifiedDate.getTime());
     }
-
     private static SR_ApprovalDecisionDTO decision(
         Return_Request__c requestRow,
         Boolean approve,
@@ -237,6 +236,34 @@ private class SR_ApprovalServiceTest {
                 results[i].targetStatus
             );
         }
+    }
+    @IsTest
+    static void previewLevels_withStoreId_preloadsStoreOnce() {
+        seedConfig();
+        Fixture data = fixture();
+        SR_ApprovalPreviewDTO input = new SR_ApprovalPreviewDTO();
+        input.estimatedRefund = 3000000;
+        input.riskFlag = false;
+        input.channel = SR_TestDataFactory.CHANNEL_POS;
+        input.storeId = data.store.Id;
+        Test.startTest();
+        Integer beforeQueries = Limits.getQueries();
+        List<SR_ApprovalPreviewResultDTO> results =
+            SR_ApprovalService.previewLevels(
+                new List<SR_ApprovalPreviewDTO>{ input }
+            );
+        Integer usedQueries = Limits.getQueries() - beforeQueries;
+        Test.stopTest();
+        Assert.areEqual(1, results.size());
+        Assert.isTrue(results[0].success);
+        Assert.areEqual(SR_ApprovalRouter.LEVEL_CHT, results[0].approvalLevel);
+        Assert.areEqual(data.storeManager.Id, results[0].assignedApproverId);
+        Assert.areEqual(SR_StatusMachine.INSPECTING, results[0].targetStatus);
+        Assert.areEqual(
+            1,
+            usedQueries,
+            'Bulk preview must preload all referenced stores in one query.'
+        );
     }
     @IsTest
     static void decide_nullAndEmpty_returnEmpty() {
@@ -439,6 +466,71 @@ private class SR_ApprovalServiceTest {
             );
             Assert.isFalse(results[0].success);
             Assert.areEqual(STALE_RECORD, results[0].errorCode);
+        }
+    }
+    @IsTest
+    static void decide_missingRequest_returnsInvalidValue() {
+        seedConfig();
+        Fixture data = fixture();
+        Return_Request__c requestRow = createPendingRequest(
+            data,
+            SR_TestDataFactory.CHANNEL_APP,
+            data.staff,
+            data.storeManager.Id
+        );
+        Database.DeleteResult deleteResult = Database.delete(
+            requestRow,
+            false,
+            AccessLevel.SYSTEM_MODE
+        );
+        Assert.isTrue(
+            deleteResult.isSuccess(),
+            'The fixture request must be deleted to simulate a stale client ID.'
+        );
+        SR_ApprovalDecisionDTO input = decision(
+            requestRow,
+            true,
+            null,
+            versionToken(requestRow)
+        );
+        System.runAs(data.storeManager) {
+            Test.startTest();
+            List<SR_ActionResultDTO> results = SR_ApprovalService.decide(
+                new List<SR_ApprovalDecisionDTO>{ input }
+            );
+            Test.stopTest();
+            Assert.areEqual(1, results.size());
+            Assert.isFalse(results[0].success);
+            Assert.areEqual(requestRow.Id, results[0].recordId);
+            Assert.areEqual(SR_ErrorCode.INVALID_VALUE, results[0].errorCode);
+        }
+    }
+    @IsTest
+    static void decide_approveUnsupportedChannel_returnsInvalidValue() {
+        seedConfig();
+        Fixture data = fixture();
+        Return_Request__c requestRow = createPendingRequest(
+            data,
+            'UNSUPPORTED',
+            data.staff,
+            data.storeManager.Id
+        );
+        SR_ApprovalDecisionDTO input = decision(
+            requestRow,
+            true,
+            null,
+            versionToken(requestRow)
+        );
+        System.runAs(data.storeManager) {
+            Test.startTest();
+            List<SR_ActionResultDTO> results = SR_ApprovalService.decide(
+                new List<SR_ApprovalDecisionDTO>{ input }
+            );
+            Test.stopTest();
+            Assert.areEqual(1, results.size());
+            Assert.isFalse(results[0].success);
+            Assert.areEqual(requestRow.Id, results[0].recordId);
+            Assert.areEqual(SR_ErrorCode.INVALID_VALUE, results[0].errorCode);
         }
     }
     @IsTest
