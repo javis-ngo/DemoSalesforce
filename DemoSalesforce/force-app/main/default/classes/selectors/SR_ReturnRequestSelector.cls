@@ -368,4 +368,35 @@ public inherited sharing class SR_ReturnRequestSelector {
         return result;
     }
 
+    /**
+     * Reloads the canonical completion state after an authorized inspection write.
+     *
+     * SYSTEM_MODE is intentional because the refresh follows domain DML that
+     * persists workflow-controlled inspection fields using elevated access.
+     * Status__c and LastModifiedDate must reflect the final database state
+     * regardless of the inspector's direct CRUD or FLS.
+     *
+     * This method does not authorize access and must only be called for requests
+     * that the service has already authorized and successfully processed.
+     */
+    public static Map<Id, Return_Request__c>
+        selectInspectionCompletionState(Set<Id> requestIds) {
+
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new Map<Id, Return_Request__c>();
+        }
+
+        List<Return_Request__c> rows =
+            (List<Return_Request__c>) Database.queryWithBinds(
+                'SELECT Id, Name, Status__c, LastModifiedDate '
+                + 'FROM Return_Request__c '
+                + 'WHERE Id IN:requestIds',
+                new Map<String, Object>{
+                    'requestIds' => requestIds
+                },
+                AccessLevel.SYSTEM_MODE
+            );
+
+        return new Map<Id, Return_Request__c>(rows);
+    }
 }
