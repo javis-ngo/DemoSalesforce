@@ -47,12 +47,6 @@ $RECYCLE.BIN/
 **/.venv/
 **/venv/
 
-# Static Resources are included in the package.xml file, so we can ignore them in the .gitignore file.
-**/staticresources/
-**/globalValueSets/**
-**/permissionsets/
-**/profiles/
-
 # Claude Code
 .claude/
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Actual_Refund__c</fullName>
+    <label>Actual Refund</label>
+    <summarizedField>Return_Request_Line__c.Actual_Refund__c</summarizedField>
+    <summaryForeignKey>Return_Request_Line__c.Return_Request__c</summaryForeignKey>
+    <summaryOperation>sum</summaryOperation>
+    <trackTrending>false</trackTrending>
+    <type>Summary</type>
+</CustomField>

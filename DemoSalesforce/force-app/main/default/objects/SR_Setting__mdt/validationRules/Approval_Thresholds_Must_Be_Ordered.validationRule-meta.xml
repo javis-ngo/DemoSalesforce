@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Approval_Thresholds_Must_Be_Ordered</fullName>
+    <active>true</active>
+    <errorConditionFormula>Auto_Approval_Threshold__c &gt;
+Store_Manager_Max_Threshold__c</errorConditionFormula>
+    <errorMessage>Auto Approval Threshold must not exceed Store Manager Max Threshold.</errorMessage>
+</ValidationRule>

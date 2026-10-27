@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Declared_Condition__c</fullName>
+    <label>Declared Condition</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>DEFECT</fullName>
+                <default>false</default>
+                <label>DEFECT</label>
+            </value>
+            <value>
+                <fullName>WRONG_ITEM</fullName>
+                <default>false</default>
+                <label>WRONG_ITEM</label>
+            </value>
+            <value>
+                <fullName>NOT_SATISFIED</fullName>
+                <default>false</default>
+                <label>NOT_SATISFIED</label>
+            </value>
+            <value>
+                <fullName>CUSTOMER_DAMAGE</fullName>
+                <default>false</default>
+                <label>CUSTOMER_DAMAGE</label>
+            </value>
+            <value>
+                <fullName>SEALED</fullName>
+                <default>false</default>
+                <label>SEALED</label>
+            </value>
+            <value>
+                <fullName>OPENED</fullName>
+                <default>false</default>
+                <label>OPENED</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

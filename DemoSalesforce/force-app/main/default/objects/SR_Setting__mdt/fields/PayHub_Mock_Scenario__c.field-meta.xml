@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>PayHub_Mock_Scenario__c</fullName>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>PayHub Mock Scenario</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>SUCCESS</fullName>
+                <default>true</default>
+                <label>SUCCESS</label>
+            </value>
+            <value>
+                <fullName>PENDING</fullName>
+                <default>false</default>
+                <label>PENDING</label>
+            </value>
+            <value>
+                <fullName>INVALID</fullName>
+                <default>false</default>
+                <label>INVALID</label>
+            </value>
+            <value>
+                <fullName>ERROR</fullName>
+                <default>false</default>
+                <label>ERROR</label>
+            </value>
+            <value>
+                <fullName>TIMEOUT</fullName>
+                <default>false</default>
+                <label>TIMEOUT</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Default</label>
+    <protected>false</protected>
+    <values>
+        <field>Approval_SLA_Hours__c</field>
+        <value xsi:type="xsd:double">24.0</value>
+    </values>
+    <values>
+        <field>Auto_Approval_Threshold__c</field>
+        <value xsi:type="xsd:double">2000000.0</value>
+    </values>
+    <values>
+        <field>Enable_Auto_Approval__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Enable_POS_App_Notification__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Enable_PayHub__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Goods_Due_Days__c</field>
+        <value xsi:type="xsd:double">7.0</value>
+    </values>
+    <values>
+        <field>PayHub_Max_Total_Attempts__c</field>
+        <value xsi:type="xsd:double">3.0</value>
+    </values>
+    <values>
+        <field>PayHub_Mock_Scenario__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>PayHub_Retry_Interval_Minutes__c</field>
+        <value xsi:type="xsd:double">15.0</value>
+    </values>
+    <values>
+        <field>PayHub_Timeout_Seconds__c</field>
+        <value xsi:type="xsd:double">10.0</value>
+    </values>
+    <values>
+        <field>PayHub_Use_Mock__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Portal_Lock_Minutes__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Portal_Max_Failed__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Risk_Request_Count__c</field>
+        <value xsi:type="xsd:double">3.0</value>
+    </values>
+    <values>
+        <field>Risk_Total_Amount__c</field>
+        <value xsi:type="xsd:double">3.0E7</value>
+    </values>
+    <values>
+        <field>Risk_Window_Days__c</field>
+        <value xsi:type="xsd:double">30.0</value>
+    </values>
+    <values>
+        <field>Store_Manager_Max_Threshold__c</field>
+        <value xsi:type="xsd:double">2.0E7</value>
+    </values>
+</CustomMetadata>
