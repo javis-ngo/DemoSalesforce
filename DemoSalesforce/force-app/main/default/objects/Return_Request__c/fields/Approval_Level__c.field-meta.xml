@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Approval_Level__c</fullName>
+    <label>Approval Level</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>AUTO</fullName>
+                <default>true</default>
+                <label>AUTO</label>
+            </value>
+            <value>
+                <fullName>CHT</fullName>
+                <default>false</default>
+                <label>CHT</label>
+            </value>
+            <value>
+                <fullName>QLV</fullName>
+                <default>false</default>
+                <label>QLV</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Assigned_To_Me__c</fullName>
-    <description>List view "Chờ tôi duyệt": người đang xem là người được giao duyệt (Assigned_Approver__c). Owner: Dev C</description>
+    <description>List view &quot;Chờ tôi duyệt&quot;: người đang xem là người được giao duyệt (Assigned_Approver__c). Owner: Dev C</description>
     <formula>Assigned_Approver__c = $User.Id</formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
     <inlineHelpText>Yêu cầu đang giao cho bạn duyệt.</inlineHelpText>

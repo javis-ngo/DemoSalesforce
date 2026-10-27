@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>B7 - Cho phép Kế toán xác nhận đã hoàn tiền thủ công (Refund Failed → Completed, FR-14). Kiểm tra trong SR_ManualRefundService.</description>
+    <isLicensed>false</isLicensed>
+    <label>SR Manual Refund</label>
+</CustomPermission>

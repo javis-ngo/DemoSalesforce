@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Refund_Rate_Must_Be_Valid</fullName>
+    <active>true</active>
+    <errorConditionFormula>OR(
+    Refund_Rate__c &lt; 0,
+    Refund_Rate__c &gt; 100
+)</errorConditionFormula>
+    <errorMessage>Refund Rate must be between 0 and 100.</errorMessage>
+</ValidationRule>

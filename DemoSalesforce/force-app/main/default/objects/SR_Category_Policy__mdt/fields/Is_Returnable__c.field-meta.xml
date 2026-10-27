@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Returnable__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Whether products in this family can be returned</description>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>When unchecked, Return Window Days must be blank</inlineHelpText>
+    <label>Is Returnable</label>
+    <type>Checkbox</type>
+</CustomField>
