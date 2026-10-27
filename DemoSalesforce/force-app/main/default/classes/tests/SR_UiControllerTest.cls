@@ -31,14 +31,6 @@ private class SR_UiControllerTest {
         SR_TestDataFactory.createOrders(new List<SR_TestDataFactory.OrderSpec>{ fryer, phone });
     }
 
-    // Giả lập hàng đợi hoàn tiền: SR_InspectionService chỉ chuyển sang Refund Processing khi có enqueuer
-    private class FakeRefundEnqueuer implements SR_RefundEnqueuer {
-        public Set<Id> enqueuedIds = new Set<Id>();
-        public void enqueue(Set<Id> requestIds) {
-            enqueuedIds.addAll(requestIds);
-        }
-    }
-
     // Static bị xóa giữa các test method nên mỗi test gọi lại
     private static void useTestConfig() {
         SR_TestDataFactory.seedSmartReturnTestConfig();
@@ -112,8 +104,6 @@ private class SR_UiControllerTest {
     @IsTest
     static void inspectionMovesRequestToRefund() {
         useTestConfig();
-        FakeRefundEnqueuer enqueuer = new FakeRefundEnqueuer();
-        SR_InspectionService.setRefundEnqueuer(enqueuer);
         Id requestId = createFryerRequest();
         SR_RequestPageService.InspectionData data = SR_ReturnUiController.getInspectionData(requestId);
         Assert.isTrue(data.canInspect, data.status);
@@ -123,7 +113,8 @@ private class SR_UiControllerTest {
 
         Assert.areEqual(SR_StatusMachine.REFUND_PROCESSING,
             [SELECT Status__c FROM Return_Request__c WHERE Id = :requestId].Status__c);
-        Assert.isTrue(enqueuer.enqueuedIds.contains(requestId), 'Phải đưa yêu cầu vào hàng đợi hoàn tiền');
+        // SR_RefundService xếp job gửi PayHub; không gọi Test.stopTest nên job không chạy, không cần mock callout
+        Assert.areEqual(1, Limits.getQueueableJobs(), 'Phải đưa yêu cầu vào hàng đợi hoàn tiền');
     }
 
     // D.3: giữ nguyên tình trạng thì tiền dòng bằng tiền dự kiến; tiền do Apex tính, không tính trong JS

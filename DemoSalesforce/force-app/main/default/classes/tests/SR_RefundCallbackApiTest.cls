@@ -1,7 +1,6 @@
 /**
  * Test cho SR_RefundCallbackApi / SR_RefundCallbackService (B9; INT-04, Phụ lục E.4; FR-12, FR-14).
- * [DEV A] Các test có tạo Return_Request__c cần picklist Status__c có REFUND_PROCESSING / COMPLETED / REFUND_FAILED
- *         và SR_StatusMachine.change ghi Return_Request_History__c.
+ * Chuyển trạng thái + lịch sử qua SR_StatusMachine.change (Dev A); trạng thái khởi tạo ghi thẳng khi insert.
  * Chạy: sf apex run test --class-names SR_RefundCallbackApiTest --result-format human
  */
 @IsTest
@@ -30,6 +29,7 @@ private class SR_RefundCallbackApiTest {
     }
 
     private static Return_Request__c insertRequest(String status) {
+        SR_TestDataFactory.seedSmartReturnTestConfig();      // SR_Config cho công tắc B.4 khi phát sự kiện
         Return_Request__c r = new Return_Request__c(Channel__c = 'POS', Status__c = status);
         insert r;
         return [SELECT Id, Name FROM Return_Request__c WHERE Id = :r.Id];
@@ -62,7 +62,7 @@ private class SR_RefundCallbackApiTest {
         Assert.areEqual(SR_ApiResponse.REQUEST_NOT_FOUND, body.get('errorCode'));
     }
 
-    // ---------- Cần dữ liệu [DEV A] ----------
+    // ---------- Có dữ liệu ----------
 
     // E.4: PayHub gọi 2 lần – lần 2 vẫn 200, không thêm lịch sử
     @IsTest
@@ -90,9 +90,10 @@ private class SR_RefundCallbackApiTest {
         Return_Request__c r = insertRequest(SR_RefundDomain.STATUS_REFUND_PROCESSING);
         Test.startTest();
         callback(payload(r.Name, 'FAILED'));
+        Integer statusCode = RestContext.response.statusCode;       // RestContext bị xóa sau Test.stopTest
         Test.stopTest();
 
-        Assert.areEqual(200, RestContext.response.statusCode);
+        Assert.areEqual(200, statusCode);
         Return_Request__c after = [SELECT Status__c, Last_Refund_Error__c FROM Return_Request__c WHERE Id = :r.Id];
         Assert.areEqual(SR_RefundDomain.STATUS_REFUND_FAILED, after.Status__c);
         Assert.isTrue(after.Last_Refund_Error__c.contains('CARD_CLOSED'));

@@ -7,15 +7,15 @@
  */
 public inherited sharing class SR_ApiResponse {
 
-    // errorCode (cấp yêu cầu) – Phụ lục E.1, E.2, E.4
-    public static final String VALIDATION_FAILED = 'VALIDATION_FAILED';
-    public static final String ORDER_NOT_FOUND = 'ORDER_NOT_FOUND';
-    public static final String REQUEST_NOT_FOUND = 'REQUEST_NOT_FOUND';
-    public static final String INTERNAL_ERROR = 'INTERNAL_ERROR';
+    // errorCode (cấp yêu cầu) – Phụ lục E.1, E.2, E.4; giá trị chuẩn ở SR_ErrorCode (Dev A)
+    public static final String VALIDATION_FAILED = SR_ErrorCode.VALIDATION_FAILED;
+    public static final String ORDER_NOT_FOUND = SR_ErrorCode.ORDER_NOT_FOUND;
+    public static final String REQUEST_NOT_FOUND = SR_ErrorCode.REQUEST_NOT_FOUND;
+    public static final String INTERNAL_ERROR = SR_ErrorCode.INTERNAL_ERROR;
 
     // code trong details (cấp field / SKU) – Phụ lục E.1
-    public static final String MISSING_FIELD = 'MISSING_FIELD';
-    public static final String INVALID_VALUE = 'INVALID_VALUE';
+    public static final String MISSING_FIELD = SR_ErrorCode.MISSING_FIELD;
+    public static final String INVALID_VALUE = SR_ErrorCode.INVALID_VALUE;
 
     public Integer statusCode;
     public Object body;
@@ -48,7 +48,12 @@ public inherited sharing class SR_ApiResponse {
         SR_Logger logger = SR_Logger.getInstance();
         String code = logger.errorWithCode(classMethod, context, e, recordId);
         logger.push();
-        return error(500, INTERNAL_ERROR, String.format(System.Label.SR_MSG_90, new List<Object>{ code }), null);
+        return loggedError(code);
+    }
+
+    // 500 cho lỗi đã được ghi log ở nơi khác (vd. SR_ReturnRequestService của Dev A): chỉ trả mã tra cứu
+    public static SR_ApiResponse loggedError(String logCode) {
+        return error(500, INTERNAL_ERROR, String.format(System.Label.SR_MSG_90, new List<Object>{ logCode }), null);
     }
 
     public String toJson() {

@@ -40,17 +40,22 @@ public without sharing class SR_ManualRefundService {
         }
         Return_Request__c r = found[0];
         if (!SR_RefundDomain.canMarkManualRefund(r)) {
-            // [DEV A] SR_StatusMachine.labelOf: nhãn tiếng Việt của trạng thái
+            // SR_StatusMachine.labelOf: nhãn tiếng Việt của trạng thái
             throw new ManualRefundException(String.format(System.Label.SR_MSG_20, new List<Object>{
                 SR_StatusMachine.labelOf(r.Status__c), SR_StatusMachine.labelOf(SR_RefundDomain.STATUS_COMPLETED)
             }));
         }
-        SR_RefundService.applyFinalResult(
-            r,
-            new Return_Request__c(Id = r.Id, PayHub_Refund_Id__c = transactionId),
-            SR_RefundDomain.STATUS_COMPLETED,
-            'Kế toán hoàn tiền thủ công, mã giao dịch ' + transactionId
-        );
+        try {
+            SR_RefundService.applyFinalResult(
+                r,
+                new Return_Request__c(Id = r.Id, PayHub_Refund_Id__c = transactionId),
+                SR_RefundDomain.STATUS_COMPLETED,
+                'Kế toán hoàn tiền thủ công, mã giao dịch ' + transactionId
+            );
+        } catch (SR_RefundService.StatusChangeException e) {
+            // SR_StatusMachine từ chối (MSG-20): câu nghiệp vụ, hiện nguyên cho Kế toán
+            throw new ManualRefundException(e.getMessage());
+        }
     }
 
     private static Boolean hasPermission() {

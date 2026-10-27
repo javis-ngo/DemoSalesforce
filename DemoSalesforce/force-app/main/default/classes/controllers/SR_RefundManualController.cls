@@ -10,16 +10,9 @@ public with sharing class SR_RefundManualController {
         try {
             SR_ManualRefundService.markManualRefund(requestId, payHubTransactionId);
         } catch (SR_ManualRefundService.ManualRefundException e) {
-            throw auraException(e.getMessage());     // câu nghiệp vụ, hiện nguyên cho Kế toán
+            throw SR_UiUtil.auraException(e.getMessage());   // câu nghiệp vụ, hiện nguyên cho Kế toán
         } catch (Exception e) {
-            throw SR_Util.auraError(e);               // MSG-90 kèm mã lỗi
+            throw SR_UiUtil.auraError(e);                     // MSG-90 kèm mã lỗi
         }
-    }
-
-    // setMessage để getMessage() trả đúng câu báo thay vì "Script-thrown exception"
-    private static AuraHandledException auraException(String message) {
-        AuraHandledException e = new AuraHandledException(message);
-        e.setMessage(message);
-        return e;
     }
 }

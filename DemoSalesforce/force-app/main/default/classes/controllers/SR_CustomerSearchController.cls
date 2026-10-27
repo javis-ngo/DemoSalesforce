@@ -9,7 +9,7 @@ public with sharing class SR_CustomerSearchController {
         try {
             return SR_CustomerSearchService.searchAll(term);
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 }

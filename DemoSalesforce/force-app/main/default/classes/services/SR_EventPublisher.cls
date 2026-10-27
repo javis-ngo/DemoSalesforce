@@ -6,9 +6,9 @@
  * Cả 2 event là Publish After Commit → chỉ gửi khi dữ liệu đã lưu thành công, giao dịch rollback thì không gửi (BR-15).
  * Event chỉ chứa mã yêu cầu, kết quả, số tiền, mã cửa hàng, thời điểm: không có Ghi chú nội bộ (BR-18).
  * Gọi từ SR_RefundService (B5); SR_RefundManualController (B7) và SR_RefundCallbackApi (B9) dùng lại.
- * [DEV A] Tích hợp: SR_RefundService đã gọi publishResult sau khi chuyển trạng thái, nên trigger/service của Dev A
+ * Tích hợp Dev A: SR_RefundService đã gọi publishResult sau khi chuyển trạng thái, nên trigger/service của Dev A
  * không cần gọi lại cho COMPLETED/REFUND_FAILED (tránh sự kiện trùng). Chuyển trạng thái ở nơi khác sang
- * COMPLETED/REFUND_FAILED (do Dev A viết) thì gọi hàm này sau khi đã update.
+ * COMPLETED/REFUND_FAILED thì gọi hàm này sau khi đã update.
  * Owner: Dev B
  */
 public without sharing class SR_EventPublisher {
@@ -18,14 +18,9 @@ public without sharing class SR_EventPublisher {
         SR_RefundDomain.STATUS_REFUND_FAILED
     };
 
-    private static final String SETTING_DEVELOPER_NAME = 'Default';
     private static final String CONTEXT = 'SR_EventPublisher';
 
-    @TestVisible
-    private static Boolean notifyPosAppOverride;
-
     /**
-     * [DEV A] Giá trị Status__c (COMPLETED, REFUND_FAILED) và field Actual_Refund__c, Store__c do Dev A định nghĩa.
      * reqs cần có: Id, Name, Status__c (trạng thái MỚI), Actual_Refund__c, Store__r.Store_Code__c.
      * Yêu cầu không ở trạng thái kết quả thì bỏ qua.
      */
@@ -96,12 +91,8 @@ public without sharing class SR_EventPublisher {
         logger.push();
     }
 
-    // Công tắc B.4, mặc định bật
+    // Công tắc B.4 qua SR_Config, mặc định bật (chưa cấu hình = bật)
     private static Boolean notifyPosApp() {
-        if (notifyPosAppOverride != null) {
-            return notifyPosAppOverride;
-        }
-        SR_Setting__mdt s = SR_Setting__mdt.getInstance(SETTING_DEVELOPER_NAME);
-        return s == null || s.Enable_POS_App_Notification__c == true;
+        return SR_Config.isPosAppNotificationEnabled() != false;
     }
 }

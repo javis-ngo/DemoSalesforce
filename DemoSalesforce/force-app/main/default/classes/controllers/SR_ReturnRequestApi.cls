@@ -24,10 +24,10 @@ global with sharing class SR_ReturnRequestApi {
                 result = SR_ApiResponse.badRequest(SR_ApiResponse.MISSING_FIELD, 'Body rỗng');
             } else if (req.requestURI != null && req.requestURI.removeEnd('/').endsWith(IMPORT_SUFFIX)) {
                 result = SR_ReturnRequestApiService.importRequests(
-                    (List<SR_DTO.CreateRequest>) JSON.deserialize(body, List<SR_DTO.CreateRequest>.class));
+                    (List<SR_CreateRequestDTO>) JSON.deserialize(body, List<SR_CreateRequestDTO>.class));
             } else {
                 result = SR_ReturnRequestApiService.create(
-                    (SR_DTO.CreateRequest) JSON.deserialize(body, SR_DTO.CreateRequest.class));
+                    (SR_CreateRequestDTO) JSON.deserialize(body, SR_CreateRequestDTO.class));
             }
         } catch (JSONException e) {
             result = SR_ApiResponse.badRequest(SR_ApiResponse.INVALID_VALUE, 'JSON không hợp lệ: ' + e.getMessage());

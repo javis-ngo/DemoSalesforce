@@ -61,10 +61,11 @@ private class SR_EventPublisherTest {
     @IsTest
     static void publishResultWithSwitchOnAndOff() {
         List<Return_Request__c> reqs = new List<Return_Request__c>{ request('COMPLETED') };
+        SR_TestDataFactory.seedSmartReturnTestConfig();
         Test.startTest();
-        SR_EventPublisher.notifyPosAppOverride = true;
+        SR_TestDataFactory.overrideConfig(SR_Setting__mdt.Enable_POS_App_Notification__c, true);
         SR_EventPublisher.publishResult(reqs);
-        SR_EventPublisher.notifyPosAppOverride = false;
+        SR_TestDataFactory.overrideConfig(SR_Setting__mdt.Enable_POS_App_Notification__c, false);
         SR_EventPublisher.publishResult(reqs);
         SR_EventPublisher.publishResult(null);
         Test.stopTest();

@@ -4,15 +4,13 @@
  *  - importRequests(): tối đa 200 yêu cầu, kết quả từng dòng; dòng lỗi không làm hỏng dòng đúng (NFR-02, UAT-01).
  *  - lookup(): INT-02. 404 REQUEST_NOT_FOUND nếu không có hoặc integration user không được xem.
  * Kiểm tra hạn, ngành hàng, số lượng, tính tiền, chống trùng nằm ở SR_ReturnRequestService.createRequests (Dev A);
- * class này chỉ kiểm tra những gì riêng của API (channel POS/APP, số lượng import) và dựng JSON theo Phụ lục E.
+ * class này chỉ kiểm tra những gì riêng của API (channel POS/APP) và dựng JSON theo Phụ lục E.
  * Không trả Ghi chú nội bộ (BR-18).
- * [DEV A] Giả định hợp đồng SR_DTO (chưa có trong repo):
- *  - CreateRequest: externalRequestId, channel, orderNumber, customerPhone, storeCode,
- *    lines[] { sku, quantity, reason, condition } – đúng tên field JSON ở E.1 nên deserialize thẳng.
- *  - CreateResult: success, duplicate, requestNumber, status, approvalLevel, estimatedRefundAmount,
- *    lines[] (ResultLine: sku, quantity, unitPrice, refundRate, refundAmount),
- *    errorCode (ORDER_NOT_FOUND | VALIDATION_FAILED | ...), message, details[] (LineError: sku, code, message).
- *  - createRequests trả kết quả cùng thứ tự với đầu vào.
+ * Hợp đồng Dev A:
+ *  - Body JSON E.1 deserialize thẳng vào SR_CreateRequestDTO / SR_CreateLineDTO (cùng tên field).
+ *  - createRequests trả List<SR_CreateResultDTO> cùng thứ tự đầu vào: success, isDuplicate, requestNumber, status,
+ *    approvalLevel, estimatedRefund, lines (SR_LineCreateResultDTO), errors (SR_ErrorDetailDTO: sku, code,
+ *    params, message), correlationId (= mã tra log khi INTERNAL_ERROR, Dev A đã ghi log).
  * Owner: Dev B
  */
 public with sharing class SR_ReturnRequestApiService {
@@ -23,33 +21,35 @@ public with sharing class SR_ReturnRequestApiService {
     // Việt Nam không đổi giờ theo mùa nên offset cố định
     private static final String TIME_ZONE = 'Asia/Ho_Chi_Minh';
     private static final String TIME_OFFSET = '+07:00';
+    private static final String MSG_INVALID_REQUEST = 'Yêu cầu không hợp lệ';
 
     // ---------- INT-01 ----------
 
-    public static SR_ApiResponse create(SR_DTO.CreateRequest input) {
+    public static SR_ApiResponse create(SR_CreateRequestDTO input) {
         Map<String, Object> invalid = validateInput(input);
         if (invalid != null) {
-            return SR_ApiResponse.error(400, SR_ApiResponse.VALIDATION_FAILED, 'Yêu cầu không hợp lệ',
+            return SR_ApiResponse.error(400, SR_ApiResponse.VALIDATION_FAILED, MSG_INVALID_REQUEST,
                 new List<Object>{ invalid });
         }
-        SR_DTO.CreateResult r = SR_ReturnRequestService.createRequests(new List<SR_DTO.CreateRequest>{ input })[0];
+        SR_CreateResultDTO r = SR_ReturnRequestService.createRequests(
+            new List<SR_CreateRequestDTO>{ sanitize(input) })[0];
         if (r.success == true) {
-            return new SR_ApiResponse(r.duplicate == true ? 200 : 201, toCreatedBody(r));
+            return new SR_ApiResponse(r.isDuplicate == true ? 200 : 201, toCreatedBody(r));
         }
-        if (r.errorCode == SR_ApiResponse.ORDER_NOT_FOUND) {
-            return SR_ApiResponse.error(404, SR_ApiResponse.ORDER_NOT_FOUND, r.message, null);
+        String errorCode = errorCodeOf(r);
+        if (errorCode == SR_ApiResponse.INTERNAL_ERROR) {
+            // Dev A đã ghi log với mã correlationId: chỉ trả mã tra cứu, không ghi log lần nữa (MSG-90)
+            return SR_ApiResponse.loggedError(r.correlationId);
         }
-        if (r.errorCode == SR_ApiResponse.VALIDATION_FAILED) {
-            return SR_ApiResponse.error(400, SR_ApiResponse.VALIDATION_FAILED, r.message, toDetails(r));
+        if (errorCode == SR_ApiResponse.ORDER_NOT_FOUND) {
+            return SR_ApiResponse.error(404, SR_ApiResponse.ORDER_NOT_FOUND, errorMessageOf(r), null);
         }
-        // Service trả lỗi lạ: ghi log, trả 500 kèm mã tra cứu
-        return SR_ApiResponse.internalError('SR_ReturnRequestApiService.create', 'INT-01',
-            new ApiException(r.errorCode + ': ' + r.message), null);
+        return SR_ApiResponse.error(400, SR_ApiResponse.VALIDATION_FAILED, MSG_INVALID_REQUEST, toDetails(r));
     }
 
     // ---------- Import (NFR-02) ----------
 
-    public static SR_ApiResponse importRequests(List<SR_DTO.CreateRequest> inputs) {
+    public static SR_ApiResponse importRequests(List<SR_CreateRequestDTO> inputs) {
         if (inputs == null || inputs.isEmpty()) {
             return SR_ApiResponse.badRequest(SR_ApiResponse.MISSING_FIELD, 'Danh sách yêu cầu trống');
         }
@@ -60,27 +60,28 @@ public with sharing class SR_ReturnRequestApiService {
 
         // Dòng sai channel / rỗng báo lỗi tại chỗ, chỉ gửi dòng hợp lệ vào service (giữ vị trí index)
         List<Map<String, Object>> items = new List<Map<String, Object>>();
-        List<SR_DTO.CreateRequest> valid = new List<SR_DTO.CreateRequest>();
+        List<SR_CreateRequestDTO> valid = new List<SR_CreateRequestDTO>();
         List<Integer> validIndexes = new List<Integer>();
         for (Integer i = 0; i < inputs.size(); i++) {
             Map<String, Object> invalid = validateInput(inputs[i]);
             if (invalid == null) {
-                valid.add(inputs[i]);
+                valid.add(sanitize(inputs[i]));
                 validIndexes.add(i);
                 items.add(null);
             } else {
                 items.add(importItem(i, inputs[i], false, null, null, SR_ApiResponse.VALIDATION_FAILED,
-                    'Yêu cầu không hợp lệ', new List<Object>{ invalid }));
+                    MSG_INVALID_REQUEST, new List<Object>{ invalid }));
             }
         }
 
         if (!valid.isEmpty()) {
-            List<SR_DTO.CreateResult> results = SR_ReturnRequestService.createRequests(valid);
+            List<SR_CreateResultDTO> results = SR_ReturnRequestService.createRequests(valid);
             for (Integer k = 0; k < results.size(); k++) {
-                SR_DTO.CreateResult r = results[k];
+                SR_CreateResultDTO r = results[k];
                 Integer i = validIndexes[k];
-                items[i] = importItem(i, inputs[i], r.success == true, r.requestNumber, r.status,
-                    r.errorCode, r.message, toDetails(r));
+                Boolean ok = r.success == true;
+                items[i] = importItem(i, inputs[i], ok, r.requestNumber, r.status,
+                    ok ? null : errorCodeOf(r), ok ? null : importMessageOf(r), ok ? null : toDetails(r));
             }
         }
 
@@ -113,22 +114,90 @@ public with sharing class SR_ReturnRequestApiService {
 
     // ---------- Hàm phụ ----------
 
-    // null = hợp lệ; ngược lại là 1 dòng details theo E.1
+    // null = hợp lệ; ngược lại là 1 dòng details theo E.1. Kiểm tra còn lại (thiếu đơn, dòng...) do Dev A làm.
     @TestVisible
-    private static Map<String, Object> validateInput(SR_DTO.CreateRequest input) {
+    private static Map<String, Object> validateInput(SR_CreateRequestDTO input) {
         if (input == null) {
             return SR_ApiResponse.detail(null, SR_ApiResponse.MISSING_FIELD, 'Yêu cầu rỗng');
         }
-        if (String.isBlank(input.channel)) {
+        String channel = SR_Util.normalize(input.channel);
+        if (channel == null) {
             return SR_ApiResponse.detail(null, SR_ApiResponse.MISSING_FIELD, 'Thiếu channel');
         }
-        if (!API_CHANNELS.contains(input.channel)) {
+        // COUNTER chỉ dùng cho màn hình tại quầy (D.1), không nhận qua API
+        if (!API_CHANNELS.contains(channel)) {
             return SR_ApiResponse.detail(null, SR_ApiResponse.INVALID_VALUE, 'channel phải là POS hoặc APP');
         }
         return null;
     }
 
-    private static Map<String, Object> importItem(Integer index, SR_DTO.CreateRequest input, Boolean success,
+    // Field nội bộ không cho hệ thống ngoài tự đặt: rủi ro do Salesforce tính, đơn tra theo orderNumber + SĐT
+    @TestVisible
+    private static SR_CreateRequestDTO sanitize(SR_CreateRequestDTO input) {
+        input.riskFlag = null;
+        input.orderId = null;
+        input.atomicMode = false;
+        if (input.lines != null) {
+            for (SR_CreateLineDTO line : input.lines) {
+                if (line != null) {
+                    line.orderItemId = null;
+                    line.unitPrice = null;
+                }
+            }
+        }
+        return input;
+    }
+
+    // errorCode cấp yêu cầu (E.1): ORDER_NOT_FOUND, INTERNAL_ERROR, còn lại VALIDATION_FAILED
+    @TestVisible
+    private static String errorCodeOf(SR_CreateResultDTO r) {
+        String result = SR_ApiResponse.VALIDATION_FAILED;
+        for (SR_ErrorDetailDTO e : r.errors) {
+            if (e?.code == SR_ApiResponse.INTERNAL_ERROR) {
+                return SR_ApiResponse.INTERNAL_ERROR;
+            }
+            if (e?.code == SR_ApiResponse.ORDER_NOT_FOUND) {
+                result = SR_ApiResponse.ORDER_NOT_FOUND;
+            }
+        }
+        return result;
+    }
+
+    private static String errorMessageOf(SR_CreateResultDTO r) {
+        return r.errors.isEmpty() ? MSG_INVALID_REQUEST : messageOf(r.errors[0]);
+    }
+
+    private static String importMessageOf(SR_CreateResultDTO r) {
+        String errorCode = errorCodeOf(r);
+        if (errorCode == SR_ApiResponse.INTERNAL_ERROR) {
+            return SR_Util.format(System.Label.SR_MSG_90, new List<Object>{ r.correlationId });
+        }
+        return errorCode == SR_ApiResponse.ORDER_NOT_FOUND ? errorMessageOf(r) : MSG_INVALID_REQUEST;
+    }
+
+    // Câu báo của dòng lỗi: dùng câu Dev A soạn; trống thì lấy Custom Label theo mã (MSG-xx) điền params
+    @TestVisible
+    private static String messageOf(SR_ErrorDetailDTO e) {
+        if (String.isNotBlank(e.message)) {
+            return e.message;
+        }
+        if (!SR_ErrorCode.isSupported(e.code)) {
+            return e.code;
+        }
+        return SR_Util.format(SR_ErrorCode.message(e.code), e.params);
+    }
+
+    private static List<Object> toDetails(SR_CreateResultDTO r) {
+        List<Object> details = new List<Object>();
+        for (SR_ErrorDetailDTO e : r.errors) {
+            if (e != null && e.code != SR_ApiResponse.INTERNAL_ERROR) {
+                details.add(SR_ApiResponse.detail(e.sku, e.code, messageOf(e)));
+            }
+        }
+        return details;
+    }
+
+    private static Map<String, Object> importItem(Integer index, SR_CreateRequestDTO input, Boolean success,
         String requestNumber, String status, String errorCode, String message, List<Object> details) {
         return new Map<String, Object>{
             'index' => index,
@@ -142,23 +211,11 @@ public with sharing class SR_ReturnRequestApiService {
         };
     }
 
-    // [DEV A] LineError: sku, code, message
-    private static List<Object> toDetails(SR_DTO.CreateResult r) {
-        List<Object> details = new List<Object>();
-        if (r.details == null) {
-            return details;
-        }
-        for (SR_DTO.LineError e : r.details) {
-            details.add(SR_ApiResponse.detail(e.sku, e.code, e.message));
-        }
-        return details;
-    }
-
     // Body thành công theo mẫu E.1
-    private static Map<String, Object> toCreatedBody(SR_DTO.CreateResult r) {
+    private static Map<String, Object> toCreatedBody(SR_CreateResultDTO r) {
         List<Object> lines = new List<Object>();
         if (r.lines != null) {
-            for (SR_DTO.ResultLine l : r.lines) {
+            for (SR_LineCreateResultDTO l : r.lines) {
                 lines.add(new Map<String, Object>{
                     'sku' => l.sku,
                     'quantity' => l.quantity,
@@ -172,7 +229,7 @@ public with sharing class SR_ReturnRequestApiService {
             'requestNumber' => r.requestNumber,
             'status' => r.status,
             'approvalLevel' => r.approvalLevel,
-            'estimatedRefundAmount' => r.estimatedRefundAmount,
+            'estimatedRefundAmount' => r.estimatedRefund,
             'lines' => lines
         };
     }
@@ -213,8 +270,5 @@ public with sharing class SR_ReturnRequestApiService {
     @TestVisible
     private static String toIso(Datetime value) {
         return value == null ? null : value.format('yyyy-MM-dd\'T\'HH:mm:ss', TIME_ZONE) + TIME_OFFSET;
-    }
-
-    public class ApiException extends Exception {
     }
 }
