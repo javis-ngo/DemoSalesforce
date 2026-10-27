@@ -33,6 +33,10 @@ jobs:
     environment:
       name: production
 
+    env:
+      # Salesforce DX project root (contains sfdx-project.json)
+      SF_PROJECT_DIR: DemoSalesforce
+
     steps:
       ###############################################################
       # 1. Checkout source and complete Git history
@@ -221,9 +225,15 @@ jobs:
 
           mkdir -p delta
 
+          API_VERSION=$(jq -r '.sourceApiVersion' "$SF_PROJECT_DIR/sfdx-project.json")
+
+          # Run from repo root: git diff paths are root-relative
           sf sgd source delta \
             --from "$FROM_SHA" \
             --to "$TO_SHA" \
+            --source-dir "$SF_PROJECT_DIR/force-app" \
+            --ignore-file "$SF_PROJECT_DIR/.forceignore" \
+            --api-version "$API_VERSION" \
             --output-dir delta
 
       ###############################################################
@@ -258,19 +268,22 @@ jobs:
       - name: Deploy Production Delta
         if: steps.deployment_mode.outputs.mode == 'delta'
         shell: bash
+        working-directory: ${{ env.SF_PROJECT_DIR }}
         run: |
           set -euo pipefail
+
+          DELTA_DIR="$GITHUB_WORKSPACE/delta"
 
           HAS_PACKAGE=false
           HAS_DESTRUCTIVE=false
 
-          if [ -f delta/package/package.xml ] &&
-             grep -q "<types>" delta/package/package.xml; then
+          if [ -f "$DELTA_DIR/package/package.xml" ] &&
+             grep -q "<types>" "$DELTA_DIR/package/package.xml"; then
             HAS_PACKAGE=true
           fi
 
-          if [ -f delta/destructiveChanges/destructiveChanges.xml ] &&
-             grep -q "<types>" delta/destructiveChanges/destructiveChanges.xml; then
+          if [ -f "$DELTA_DIR/destructiveChanges/destructiveChanges.xml" ] &&
+             grep -q "<types>" "$DELTA_DIR/destructiveChanges/destructiveChanges.xml"; then
             HAS_DESTRUCTIVE=true
           fi
 
@@ -284,9 +297,9 @@ jobs:
           fi
 
           if [ "$HAS_PACKAGE" = "true" ]; then
-            MANIFEST="delta/package/package.xml"
+            MANIFEST="$DELTA_DIR/package/package.xml"
           else
-            MANIFEST="delta/destructiveChanges/package.xml"
+            MANIFEST="$DELTA_DIR/destructiveChanges/package.xml"
           fi
 
           DEPLOY_COMMAND=(
@@ -300,7 +313,7 @@ jobs:
           if [ "$HAS_DESTRUCTIVE" = "true" ]; then
             DEPLOY_COMMAND+=(
               --post-destructive-changes
-              delta/destructiveChanges/destructiveChanges.xml
+              "$DELTA_DIR/destructiveChanges/destructiveChanges.xml"
             )
           fi
 
@@ -313,10 +326,11 @@ jobs:
       - name: Deploy Full Source
         if: steps.deployment_mode.outputs.mode == 'full'
         shell: bash
+        working-directory: ${{ env.SF_PROJECT_DIR }}
         run: |
           set -euo pipefail
 
-          if [! -d force-app ]; then
+          if [ ! -d force-app ]; then
             echo "The force-app directory does not exist."
             exit 1
           fi
