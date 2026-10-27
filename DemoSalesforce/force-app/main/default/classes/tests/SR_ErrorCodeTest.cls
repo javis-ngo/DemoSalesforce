@@ -95,7 +95,33 @@ private class SR_ErrorCodeTest {
         firstRead.clear();
         Set<String> secondRead = SR_ErrorCode.getSupportedCodes();
 
-        Assert.areEqual(9, secondRead.size());
-        Assert.isTrue(secondRead.contains(SR_ErrorCode.INTERNAL_ERROR));
+        // 9 mã của Phụ lục E.1/E.2 + VALIDATION_FAILED (errorCode cấp yêu cầu, E.1)
+        // + CONFIGURATION_ERROR (lỗi cấu hình nội bộ, trả 500)
+        Set<String> expected = new Set<String>{
+            SR_ErrorCode.MISSING_FIELD,
+            SR_ErrorCode.INVALID_VALUE,
+            SR_ErrorCode.NOT_RETURNABLE,
+            SR_ErrorCode.RETURN_WINDOW_EXPIRED,
+            SR_ErrorCode.QUANTITY_EXCEEDED,
+            SR_ErrorCode.SKU_NOT_IN_ORDER,
+            SR_ErrorCode.ORDER_NOT_FOUND,
+            SR_ErrorCode.REQUEST_NOT_FOUND,
+            SR_ErrorCode.INTERNAL_ERROR,
+            SR_ErrorCode.VALIDATION_FAILED,
+            SR_ErrorCode.CONFIGURATION_ERROR
+        };
+        Assert.areEqual(expected, secondRead, 'Clear on first read must not affect later reads');
+    }
+
+    @IsTest
+    static void mapsRequestLevelAndConfigurationCodes() {
+        Assert.areEqual(
+            400,
+            SR_ErrorCode.getHttpStatus(SR_ErrorCode.VALIDATION_FAILED)
+        );
+        Assert.areEqual(
+            500,
+            SR_ErrorCode.getHttpStatus(SR_ErrorCode.CONFIGURATION_ERROR)
+        );
     }
 }
