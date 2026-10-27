@@ -53,6 +53,19 @@ private class SR_InspectionServiceTest {
         SR_PayHubClient.useMockOverride = true;
         SR_PayHubClient.mockScenarioOverride = SR_PayHubClient.SCENARIO_PENDING;
     }
+    // Provider không có bảng tỷ lệ hoàn: Phụ lục B.2 phủ đủ 12 tổ hợp lý do/tình trạng và org đã có đủ
+    // bản ghi SR_Refund_Rate__mdt, nên chỉ có thể giả lập "thiếu cấu hình" bằng cách bỏ cả nguồn metadata
+    private class NoRefundRateProvider implements SR_Config.Provider {
+        public SR_Setting__mdt getSetting(String developerName) {
+            return SR_Setting__mdt.getInstance(developerName);
+        }
+        public Map<String, SR_Category_Policy__mdt> getCategoryPolicies() {
+            return SR_Category_Policy__mdt.getAll();
+        }
+        public Map<String, SR_Refund_Rate__mdt> getRefundRates() {
+            return new Map<String, SR_Refund_Rate__mdt>();
+        }
+    }
     // Số job SR_RefundService đã xếp trong transaction hiện tại (gọi trước Test.stopTest)
     private static Integer queuedRefundJobs() {
         return Limits.getQueueableJobs();
@@ -830,6 +843,9 @@ private class SR_InspectionServiceTest {
             new List<String>{ 'USED' },
             new List<String>{ null }
         );
+        // DEFECT|USED không có trong override test nên SR_Config tra tiếp Custom Metadata (Defect_Used = 100%);
+        // bỏ nguồn metadata để tổ hợp này thực sự thiếu cấu hình
+        SR_Config.setProvider(new NoRefundRateProvider());
 
         List<SR_ActionResultDTO> results = SR_InspectionService.complete(
             new List<SR_InspectionRequestDTO>{ input }
@@ -863,7 +879,7 @@ private class SR_InspectionServiceTest {
 
         Assert.isFalse(results[0].success);
         Assert.areEqual(SR_ErrorCode.INTERNAL_ERROR, results[0].errorCode);
-        Assert.isTrue(results[0].message.contains('Mock enqueue failure'));
+        Assert.isTrue(results[0].message.contains('Forced enqueue failure'));
     }
 
     @IsTest

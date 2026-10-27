@@ -258,7 +258,9 @@ private class SR_ApprovalServiceTest {
         Assert.isTrue(results[0].success);
         Assert.areEqual(SR_ApprovalRouter.LEVEL_CHT, results[0].approvalLevel);
         Assert.areEqual(data.storeManager.Id, results[0].assignedApproverId);
-        Assert.areEqual(SR_StatusMachine.INSPECTING, results[0].targetStatus);
+        // 3.000.000đ > ngưỡng tự duyệt: chờ CHT duyệt (BR-08, Phụ lục C New → Pending Approval);
+        // INSPECTING chỉ đến sau khi CHT duyệt
+        Assert.areEqual(SR_StatusMachine.PENDING_APPROVAL, results[0].targetStatus);
         Assert.areEqual(
             1,
             usedQueries,
@@ -506,32 +508,40 @@ private class SR_ApprovalServiceTest {
         }
     }
     @IsTest
-    static void decide_approveUnsupportedChannel_returnsInvalidValue() {
+    // Channel__c là restricted picklist (COUNTER/POS/APP – Phụ lục E.1) nên không thể tạo yêu cầu có kênh lạ
+    // để chạy nhánh "Channel không hợp lệ" của SR_ApprovalService.decide; test bất biến mà nhánh đó phòng vệ
+    static void channelPicklist_rejectsUnsupportedValue() {
         seedConfig();
         Fixture data = fixture();
         Return_Request__c requestRow = createPendingRequest(
             data,
-            'UNSUPPORTED',
+            SR_TestDataFactory.CHANNEL_COUNTER,
             data.staff,
             data.storeManager.Id
         );
-        SR_ApprovalDecisionDTO input = decision(
-            requestRow,
-            true,
-            null,
-            versionToken(requestRow)
+
+        Test.startTest();
+        List<Database.SaveResult> saveResults = Database.update(
+            new List<Return_Request__c>{
+                new Return_Request__c(
+                    Id = requestRow.Id,
+                    Channel__c = 'UNSUPPORTED'
+                )
+            },
+            false,
+            AccessLevel.SYSTEM_MODE
         );
-        System.runAs(data.storeManager) {
-            Test.startTest();
-            List<SR_ActionResultDTO> results = SR_ApprovalService.decide(
-                new List<SR_ApprovalDecisionDTO>{ input }
-            );
-            Test.stopTest();
-            Assert.areEqual(1, results.size());
-            Assert.isFalse(results[0].success);
-            Assert.areEqual(requestRow.Id, results[0].recordId);
-            Assert.areEqual(SR_ErrorCode.INVALID_VALUE, results[0].errorCode);
-        }
+        Test.stopTest();
+
+        Assert.isFalse(saveResults[0].isSuccess());
+        Assert.areEqual(
+            StatusCode.INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST,
+            saveResults[0].getErrors()[0].getStatusCode()
+        );
+        Assert.areEqual(
+            SR_TestDataFactory.CHANNEL_COUNTER,
+            [SELECT Channel__c FROM Return_Request__c WHERE Id = :requestRow.Id].Channel__c
+        );
     }
     @IsTest
     static void decide_requestNoLongerPending_returnsInvalidTransition() {

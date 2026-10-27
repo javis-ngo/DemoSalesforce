@@ -33,6 +33,19 @@ private class SR_ReturnRequestServiceTest {
     private static void applyConfig() {          
         SR_TestDataFactory.seedSmartReturnTestConfig();          
     }          
+    // Provider không có bảng tỷ lệ hoàn: Phụ lục B.2 phủ đủ 12 tổ hợp và org đã có đủ bản ghi
+    // SR_Refund_Rate__mdt, nên chỉ giả lập được "thiếu cấu hình" bằng cách bỏ cả nguồn metadata
+    private class NoRefundRateProvider implements SR_Config.Provider {
+        public SR_Setting__mdt getSetting(String developerName) {
+            return SR_Setting__mdt.getInstance(developerName);
+        }
+        public Map<String, SR_Category_Policy__mdt> getCategoryPolicies() {
+            return SR_Category_Policy__mdt.getAll();
+        }
+        public Map<String, SR_Refund_Rate__mdt> getRefundRates() {
+            return new Map<String, SR_Refund_Rate__mdt>();
+        }
+    }
     private static Order orderForSku(String sku) {          
         return [          
             SELECT Id, OrderNumber, AccountId, Account.Phone, EffectiveDate, Delivery_Date__c, Store__c          
@@ -467,6 +480,9 @@ private class SR_ReturnRequestServiceTest {
         SR_Config.setRefundRateOverrides(new Map<String, Decimal>{    
             'NOT_SATISFIED|OPENED' => 80    
         });    
+        // Override không có key thì SR_Config tra tiếp Custom Metadata (Defect_Sealed = 100%);
+        // bỏ nguồn metadata để DEFECT|SEALED thực sự thiếu cấu hình
+        SR_Config.setProvider(new NoRefundRateProvider());
         Test.startTest();    
         SR_ApprovalPreviewResultDTO noStorePreview =    
             SR_ReturnRequestService.previewCreate(noStoreRequest);    
