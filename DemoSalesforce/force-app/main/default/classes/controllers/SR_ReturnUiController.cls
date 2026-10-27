@@ -1,76 +1,79 @@
 /**
  * Controller cho màn hình tạo yêu cầu trả hàng tại quầy (D.1) và trang yêu cầu (D.3 kiểm định, nút Nhận hàng / Hủy).
- * Chỉ nhận/trả dữ liệu. Kiểm tra điều kiện, tính tiền, định tuyến duyệt, kiểm định nằm ở service của Dũng;
- * dữ liệu cho trang yêu cầu gom ở SR_RequestPageService.
+ * Chỉ nhận/trả dữ liệu. Kiểm tra điều kiện, tính tiền, định tuyến duyệt, kiểm định nằm ở service của Dev A
+ * (SR_ReturnRequestService, SR_InspectionService, SR_StatusMachine); dữ liệu cho trang yêu cầu gom ở SR_RequestPageService.
+ * Owner: Dev C
  */
 public with sharing class SR_ReturnUiController {
 
     // ---------- D.1: tạo yêu cầu tại quầy ----------
 
-    // D.1 bước 1–3: thông tin đơn và từng dòng sản phẩm, dòng nào bị khóa kèm lý do
+    // D.1 bước 1–3: thông tin đơn và từng dòng sản phẩm, dòng nào bị khóa kèm mã khóa (lockCode)
     @AuraEnabled(cacheable=true)
-    public static SR_DTO.ReturnableInfo getReturnableLines(Id orderId) {
+    public static SR_ReturnableOrderDTO getReturnableOrder(Id orderId) {
         try {
-            return SR_ReturnRequestService.getReturnableLines(orderId);
+            return SR_ReturnRequestService.getReturnableOrder(orderId);
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
     // D.1 bước 4: tính trước tiền từng dòng, tổng tiền và cấp duyệt – không ghi dữ liệu
-    // draftJson: { "orderId": "...", "lines": [ { "orderItemId", "quantity", "reason", "condition" } ] }
+    // draftJson: SR_CreateRequestDTO { "orderId": "...", "lines": [ { "orderItemId", "quantity", "reason", "condition" } ] }
     @AuraEnabled
-    public static SR_DTO.PreviewResult previewLevel(String draftJson) {
+    public static SR_ApprovalPreviewResultDTO previewCreate(String draftJson) {
         try {
-            return SR_ApprovalService.previewLevel(toCounterRequest(draftJson));
+            return SR_ReturnRequestService.previewCreate(toCounterRequest(draftJson));
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
-    // D.1 bước 5: tạo yêu cầu tại quầy, cùng JSON với previewLevel
+    // D.1 bước 5: tạo yêu cầu tại quầy, cùng JSON với previewCreate
     @AuraEnabled
-    public static SR_DTO.CreateResult createFromCounter(String draftJson) {
+    public static SR_CreateResultDTO createFromCounter(String draftJson) {
         try {
             return SR_ReturnRequestService.createRequests(
-                new List<SR_DTO.CreateRequest>{ toCounterRequest(draftJson) })[0];
+                new List<SR_CreateRequestDTO>{ toCounterRequest(draftJson) })[0];
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
     // ---------- D.3: trang yêu cầu ----------
 
-    // Các dòng cần kiểm định và nút nào được hiện theo trạng thái
+    // Các dòng cần kiểm định, versionToken chống ghi đè và component có được hiện không
     @AuraEnabled
     public static SR_RequestPageService.InspectionData getInspectionData(Id requestId) {
         try {
             return SR_RequestPageService.getInspectionData(requestId);
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
-    // Đổi tình trạng thực tế → tiền dòng tính lại theo B.2 bằng hàm của Dũng
+    // Đổi tình trạng thực tế → tiền dòng tính lại theo B.2 bằng hàm của Dev A
     @AuraEnabled
     public static Decimal calcLineRefund(Id lineId, String actualCondition) {
         try {
             return SR_RequestPageService.calcLineRefund(lineId, actualCondition);
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
-    // resultsJson: [ { "lineId", "result": "PASSED" | "FAILED", "actualCondition", "note" } ] (LineResultDTO)
+    // linesJson: List<SR_InspectionLineDTO> [ { "lineId", "inspectionResult": "PASSED" | "FAILED", "actualCondition", "inspectionNote" } ]
     // Kiểm tra MSG-21, MSG-22, tính lại tiền và đổi trạng thái do SR_InspectionService làm
     @AuraEnabled
-    public static void completeInspection(Id requestId, String resultsJson) {
+    public static void completeInspection(Id requestId, String versionToken, String linesJson) {
         try {
-            SR_RequestPageService.requireInternalUser();
-            SR_InspectionService.complete(
-                requestId, (List<SR_DTO.LineResult>) JSON.deserialize(resultsJson, List<SR_DTO.LineResult>.class));
+            SR_RequestPageService.completeInspection(
+                requestId,
+                versionToken,
+                (List<SR_InspectionLineDTO>) JSON.deserialize(linesJson, List<SR_InspectionLineDTO>.class)
+            );
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
@@ -80,7 +83,7 @@ public with sharing class SR_ReturnUiController {
         try {
             return SR_RequestPageService.getActionState(requestId);
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e);
         }
     }
 
@@ -89,10 +92,8 @@ public with sharing class SR_ReturnUiController {
     public static void receiveGoods(Id requestId) {
         try {
             SR_RequestPageService.receiveGoods(requestId);
-        } catch (AuraHandledException e) {
-            throw e; // MSG-20 đã soạn sẵn
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e); // MSG-20 đã soạn sẵn thì giữ nguyên
         }
     }
 
@@ -101,17 +102,15 @@ public with sharing class SR_ReturnUiController {
     public static void cancelRequest(Id requestId, String reason) {
         try {
             SR_RequestPageService.cancel(requestId, reason);
-        } catch (AuraHandledException e) {
-            throw e; // MSG-20 đã soạn sẵn
         } catch (Exception e) {
-            throw SR_Util.auraError(e);
+            throw SR_UiUtil.auraError(e); // MSG-20 đã soạn sẵn thì giữ nguyên
         }
     }
 
     // Màn hình D.1 luôn là kênh Tại quầy; cửa hàng xử lý do service lấy theo người tạo
-    private static SR_DTO.CreateRequest toCounterRequest(String draftJson) {
-        SR_DTO.CreateRequest req = (SR_DTO.CreateRequest) JSON.deserialize(draftJson, SR_DTO.CreateRequest.class);
-        req.channel = SR_ReturnRequestService.CH_COUNTER;
+    private static SR_CreateRequestDTO toCounterRequest(String draftJson) {
+        SR_CreateRequestDTO req = (SR_CreateRequestDTO) JSON.deserialize(draftJson, SR_CreateRequestDTO.class);
+        req.channel = SR_ReturnRequestService.CHANNEL_COUNTER;
         return req;
     }
 }

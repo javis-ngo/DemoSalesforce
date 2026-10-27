@@ -2,23 +2,42 @@ import { LightningElement, api, wire } from 'lwc';
 import { CloseActionScreenEvent } from 'lightning/actions';
 import { NavigationMixin } from 'lightning/navigation';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import getReturnableLines from '@salesforce/apex/SR_ReturnUiController.getReturnableLines';
-import previewLevel from '@salesforce/apex/SR_ReturnUiController.previewLevel';
+import getReturnableOrder from '@salesforce/apex/SR_ReturnUiController.getReturnableOrder';
+import previewCreate from '@salesforce/apex/SR_ReturnUiController.previewCreate';
 import createFromCounter from '@salesforce/apex/SR_ReturnUiController.createFromCounter';
-import { MSG_01, MSG_06, formatLabel, msgFromError } from 'c/srMessages';
-import { REASON_OPTIONS, CONDITION_OPTIONS, LEVEL_LABELS, vnd, formatDate, reduceErrors } from 'c/srUtils';
+import { MSG_01, MSG_05, MSG_06, formatLabel, msgFromError } from 'c/srMessages';
+import {
+    REASON_OPTIONS,
+    CONDITION_OPTIONS,
+    LEVEL_LABELS,
+    labelOf,
+    vnd,
+    formatDate,
+    reduceErrors
+} from 'c/srUtils';
 
 const PREVIEW_DELAY_MS = 300;
 const EMPTY = '—';
 
-// D.1 – Tạo yêu cầu trả hàng tại quầy (FR-01, FR-02). Quick Action trên Order. Owner: Dev C (Đức)
-// Tiền hoàn và cấp duyệt luôn do Apex tính (previewLevel); JS chỉ hiển thị, không tự tính BR.
+// Tham số {0}, {1} của label theo mã lỗi (SR_ErrorCode): service của Dev A chỉ gửi mã + SKU,
+// màn hình điền tên sản phẩm, ngành hàng, hạn đổi trả, số lượng còn trả được
+function lineMessage(code, line, message) {
+    const params = {
+        RETURN_WINDOW_EXPIRED: [line.productName, formatDate(line.returnDeadline)],
+        NOT_RETURNABLE: [line.category],
+        QUANTITY_EXCEEDED: [line.productName, line.returnableQuantity ?? 0]
+    }[code];
+    return msgFromError({ code, params, message });
+}
+
+// D.1 – Tạo yêu cầu trả hàng tại quầy (FR-01, FR-02). Quick Action trên Order. Owner: Dev C
+// Tiền hoàn và cấp duyệt luôn do Apex tính (SR_ReturnRequestService.previewCreate của Dev A); JS chỉ hiển thị.
 export default class SrCreateReturnRequest extends NavigationMixin(LightningElement) {
     @api recordId; // Id đơn hàng
     info;
     lines = [];
     loadError;
-    preview; // kết quả previewLevel gần nhất
+    preview; // kết quả previewCreate gần nhất, chỉ giữ khi tính được (success)
     submitErrors = [];
     isPreviewing = false;
     isSaving = false;
@@ -29,15 +48,16 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
     previewSeq = 0;
 
     // recordId của Quick Action có thể đến muộn, nên dùng @wire với '$recordId'
-    @wire(getReturnableLines, { orderId: '$recordId' })
+    @wire(getReturnableOrder, { orderId: '$recordId' })
     wiredInfo({ data, error }) {
         if (data) {
             this.info = data;
             this.lines = (data.lines || []).map((l) => ({
                 ...l,
-                locked: !l.returnable,
-                rowClass: l.returnable ? '' : 'sr-row_locked',
-                deadlineText: formatDate(l.deadline),
+                locked: !l.eligible,
+                rowClass: l.eligible ? '' : 'sr-row_locked',
+                deadlineText: formatDate(l.returnDeadline),
+                lockText: l.eligible ? null : lineMessage(l.lockCode, l, l.lockMessage),
                 qty: 0,
                 reason: null,
                 condition: null,
@@ -71,7 +91,7 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
         return this.lines.filter((l) => l.qty > 0);
     }
 
-    // Dòng đủ thông tin để Apex tính tiền
+    // Dòng đủ thông tin để Apex tính tiền (SR_CreateLineDTO)
     get draftLines() {
         return this.chosenLines
             .filter((l) => l.reason && l.condition)
@@ -90,7 +110,10 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
         if (this.isPreviewing) {
             return 'Đang tính…';
         }
-        return `${vnd(this.preview ? this.preview.totalRefund : 0)}đ`;
+        if (this.preview) {
+            return `${vnd(this.preview.estimatedRefund)}đ`;
+        }
+        return this.draftLines.length > 0 ? EMPTY : '0đ';
     }
 
     get levelText() {
@@ -102,7 +125,7 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
             return EMPTY;
         }
         const label = LEVEL_LABELS[level] || level;
-        return this.preview.customerRisky ? `${label} (khách có cờ Rủi ro)` : label;
+        return this.preview.riskFlag ? `${label} (khách có cờ Rủi ro)` : label;
     }
 
     handleQty(event) {
@@ -142,7 +165,7 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
         }
         this.isPreviewing = true;
         try {
-            const result = await previewLevel({
+            const result = await previewCreate({
                 draftJson: JSON.stringify({ orderId: this.recordId, lines: draftLines })
             });
             if (seq === this.previewSeq) {
@@ -160,20 +183,50 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
         }
     }
 
+    // Lỗi tại dòng (theo SKU): tỷ lệ 0% là NOT_RETURNABLE trên dòng vốn trả được → MSG-05
+    previewLineError(error, line) {
+        if (error.code === 'NOT_RETURNABLE' && line.eligible) {
+            return formatLabel(
+                MSG_05,
+                line.productName,
+                labelOf(REASON_OPTIONS, line.reason),
+                labelOf(CONDITION_OPTIONS, line.condition)
+            );
+        }
+        return lineMessage(error.code, line, error.message);
+    }
+
+    // Tách lỗi của service: có SKU thì gắn vào dòng, không có SKU thì hiện dưới bảng
+    splitErrors(errors) {
+        const bySku = new Map();
+        const others = [];
+        (errors || []).forEach((e) => {
+            if (e.sku && !bySku.has(e.sku)) {
+                bySku.set(e.sku, e);
+            } else if (!e.sku) {
+                others.push(e);
+            }
+        });
+        return { bySku, others };
+    }
+
     // Gắn tiền từng dòng và lỗi tại dòng (MSG-04 vượt số lượng, MSG-05 tỷ lệ 0%) từ kết quả Apex
     applyPreview(result) {
-        this.preview = result;
-        const byItem = new Map(((result && result.lines) || []).map((p) => [p.orderItemId, p]));
+        this.preview = result && result.success ? result : null;
+        const amountOf = new Map(((result && result.lines) || []).map((p) => [p.orderItemId, p.refundAmount]));
+        const { bySku, others } = this.splitErrors(result && result.errors);
         this.lines = this.lines.map((l) => {
-            const p = l.qty > 0 ? byItem.get(l.orderItemId) : undefined;
-            const needsChoice = l.qty > 0 && (!l.reason || !l.condition);
+            const chosen = l.qty > 0;
+            const amount = chosen ? amountOf.get(l.orderItemId) : undefined;
+            const error = chosen ? bySku.get(l.sku) : undefined;
             return {
                 ...l,
-                refundText: p && p.refundAmount !== undefined && p.refundAmount !== null ? `${vnd(p.refundAmount)}đ` : EMPTY,
-                error: p && p.errorCode ? msgFromError({ code: p.errorCode, params: p.errorParams }) : null,
-                hint: needsChoice ? 'Chọn lý do và tình trạng để tính tiền' : null
+                refundText: amount !== undefined && amount !== null ? `${vnd(amount)}đ` : EMPTY,
+                error: error ? this.previewLineError(error, l) : null,
+                hint: chosen && (!l.reason || !l.condition) ? 'Chọn lý do và tình trạng để tính tiền' : null
             };
         });
+        this.submitErrors = others.map((e, index) => ({ key: `preview-${index}`, text: msgFromError(e) }));
     }
 
     handleClose() {
@@ -205,10 +258,9 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
                 draftJson: JSON.stringify({ orderId: this.recordId, lines: this.draftLines })
             });
             if (result && result.success) {
-                const amount = result.estimatedRefundAmount !== undefined ? result.estimatedRefundAmount : result.estimatedRefund;
                 this.dispatchEvent(
                     new ShowToastEvent({
-                        title: formatLabel(MSG_01, result.requestNumber, vnd(amount)),
+                        title: formatLabel(MSG_01, result.requestNumber, vnd(result.estimatedRefund)),
                         variant: 'success'
                     })
                 );
@@ -218,9 +270,14 @@ export default class SrCreateReturnRequest extends NavigationMixin(LightningElem
                     attributes: { recordId: result.requestId, objectApiName: 'Return_Request__c', actionName: 'view' }
                 });
             } else {
-                const details = (result && (result.errors || result.details)) || [];
-                const texts = [result && result.message, ...details.map(msgFromError)].filter((t) => !!t);
-                this.submitErrors = texts.map((text, index) => ({ key: String(index), text }));
+                const lineOf = new Map(this.lines.map((l) => [l.sku, l]));
+                const texts = ((result && result.errors) || []).map((e) => {
+                    const line = e.sku ? lineOf.get(e.sku) : undefined;
+                    return line ? this.previewLineError(e, line) : msgFromError(e);
+                });
+                this.submitErrors = (texts.length ? texts : [msgFromError({ code: 'INTERNAL_ERROR' })]).map(
+                    (text, index) => ({ key: String(index), text })
+                );
             }
         } catch (e) {
             this.submitErrors = [{ key: 'error', text: reduceErrors(e) }];

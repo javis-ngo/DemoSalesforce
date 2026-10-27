@@ -42,8 +42,8 @@ const DATA = {
             reason: 'NOT_SATISFIED',
             declaredCondition: 'OPENED',
             actualCondition: 'OPENED',
-            result: null,
-            note: null,
+            inspectionResult: null,
+            inspectionNote: null,
             estimatedRefund: 1992000,
             actualRefund: 1992000
         }

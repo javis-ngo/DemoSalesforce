@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Xem mục Ghi chú nội bộ trên trang yêu cầu đổi trả. Gán cho NV cửa hàng, CHT, QLV, Admin; không gán cho Kế toán, CSKH (Kế toán/CSKH chỉ xem, ẩn Ghi chú nội bộ). Owner: Dev C</description>
+    <isLicensed>false</isLicensed>
+    <label>SR Xem Ghi chú nội bộ</label>
+</CustomPermission>

@@ -50,7 +50,7 @@ if (u.Id == UserInfo.getUserId()) {
 String wantPs = psOfRole.get(role);
 List<PermissionSet> wanted = [SELECT Id FROM PermissionSet WHERE Name = :wantPs];
 if (wanted.isEmpty()) {
-    throw new IllegalArgumentException('CHƯA CÓ permission set ' + wantPs + ' (chờ Dũng deploy DUNG-12)');
+    throw new IllegalArgumentException('CHƯA CÓ permission set ' + wantPs + ' (chờ Đức – Dev A deploy)');
 }
 
 String newStoreCode = storeRoles.contains(role) ? storeCode.trim().toUpperCase() : null;

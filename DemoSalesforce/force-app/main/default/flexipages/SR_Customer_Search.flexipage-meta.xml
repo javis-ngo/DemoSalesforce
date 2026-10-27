@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Tìm kiếm CSKH: khách hàng, đơn hàng, yêu cầu theo SĐT / tên / số đơn / mã yêu cầu (srCustomerSearch của Dev B).</description>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentName>srCustomerSearch</componentName>
+                <identifier>srCustomerSearch</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>main</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <masterLabel>SR Tìm kiếm CSKH</masterLabel>
+    <template>
+        <name>flexipage:defaultAppHomeTemplate</name>
+    </template>
+    <type>AppPage</type>
+</FlexiPage>

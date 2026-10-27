@@ -47,7 +47,7 @@ public without sharing class SR_PortalService {
         }
         List<Return_Request__c> found = SR_ReturnRequestSelector.selectByNameWithPhone(code);
         if (found.isEmpty() || !SR_ReturnRequestDomain.matchesPhoneLast4(found[0], last4)) {
-            insert SR_LookupAttemptDomain.newFailedAttempt(code);
+            Database.insert(SR_LookupAttemptDomain.newFailedAttempt(code), AccessLevel.SYSTEM_MODE);
             return notFound(System.Label.SR_MSG_40);              // cùng một câu cho mọi trường hợp sai
         }
         return detail(found[0].Id);
@@ -89,7 +89,8 @@ public without sharing class SR_PortalService {
             HistoryItem hi = new HistoryItem();
             hi.key = h.Id;
             hi.statusLabel = SR_StatusMachine.labelOf(h.To_Status__c);
-            hi.changedAt = h.CreatedDate.format('dd/MM/yyyy HH:mm', 'Asia/Ho_Chi_Minh');
+            Datetime changedAt = (h.Changed_At__c != null) ? h.Changed_At__c : h.CreatedDate;
+            hi.changedAt = changedAt.format('dd/MM/yyyy HH:mm', 'Asia/Ho_Chi_Minh');
             res.history.add(hi);
         }
         for (Return_Request_Line__c l : r.Return_Request_Lines__r) {

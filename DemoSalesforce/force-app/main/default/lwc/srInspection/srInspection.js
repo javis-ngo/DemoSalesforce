@@ -71,7 +71,7 @@ export default class SrInspection extends NavigationMixin(LightningElement) {
 
     // MSG-22: còn dòng chưa chọn Đạt / Không đạt thì nút Hoàn tất bị tắt, hiện câu nhắc bên cạnh
     get showResultHint() {
-        return !!this.data.canInspect && this.lines.some((l) => !l.result);
+        return !!this.data.canInspect && this.lines.some((l) => !l.inspectionResult);
     }
 
     get readOnly() {
@@ -87,11 +87,11 @@ export default class SrInspection extends NavigationMixin(LightningElement) {
     }
 
     get completeDisabled() {
-        return this.isBusy || this.lines.some((l) => !l.result);
+        return this.isBusy || this.lines.some((l) => !l.inspectionResult);
     }
 
     handleResult(event) {
-        this.updateLine(event.target.dataset.id, { result: event.detail.value });
+        this.updateLine(event.target.dataset.id, { inspectionResult: event.detail.value });
     }
 
     // Đổi tình trạng thực tế → Apex tính lại tiền dòng theo Phụ lục B.2
@@ -111,7 +111,7 @@ export default class SrInspection extends NavigationMixin(LightningElement) {
     }
 
     handleNote(event) {
-        this.updateLine(event.target.dataset.id, { note: event.detail.value });
+        this.updateLine(event.target.dataset.id, { inspectionNote: event.detail.value });
     }
 
     updateLine(lineId, changes) {
@@ -128,17 +128,17 @@ export default class SrInspection extends NavigationMixin(LightningElement) {
 
     // Chỉ dòng Đạt được hoàn tiền; dòng Không đạt hoặc chưa chọn = 0đ
     withRefund(line) {
-        const refund = line.result === 'PASSED' ? line.actualRefund || 0 : 0;
+        const refund = line.inspectionResult === 'PASSED' ? line.actualRefund || 0 : 0;
         return {
             ...line,
             refund,
             refundText: line.calculating ? 'Đang tính…' : vnd(refund),
-            noteRequired: line.result === 'FAILED'
+            noteRequired: line.inspectionResult === 'FAILED'
         };
     }
 
     async handleComplete() {
-        const missingNote = this.lines.find((l) => l.result === 'FAILED' && !l.note);
+        const missingNote = this.lines.find((l) => l.inspectionResult === 'FAILED' && !l.inspectionNote);
         if (missingNote) {
             this.toast(MSG_21, 'error');
             return;
@@ -151,14 +151,22 @@ export default class SrInspection extends NavigationMixin(LightningElement) {
         if (!ok) {
             return;
         }
-        const results = this.lines.map((l) => ({
+        // SR_InspectionLineDTO của Dev A; versionToken để SR_InspectionService chống ghi đè
+        const lines = this.lines.map((l) => ({
             lineId: l.lineId,
-            result: l.result,
+            inspectionResult: l.inspectionResult,
             actualCondition: l.actualCondition,
-            note: l.note
+            inspectionNote: l.inspectionNote
         }));
-        await this.run(() => completeInspection({ requestId: this.recordId, resultsJson: JSON.stringify(results) }),
-            'Đã hoàn tất kiểm định');
+        await this.run(
+            () =>
+                completeInspection({
+                    requestId: this.recordId,
+                    versionToken: this.data.versionToken,
+                    linesJson: JSON.stringify(lines)
+                }),
+            'Đã hoàn tất kiểm định'
+        );
     }
 
     // Gọi Apex, báo kết quả, tải lại dữ liệu và làm mới các component chuẩn trên trang

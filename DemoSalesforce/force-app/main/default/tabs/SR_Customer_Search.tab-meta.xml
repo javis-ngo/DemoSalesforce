@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomTab xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Tìm kiếm khách hàng, đơn hàng, yêu cầu cho CSKH (srCustomerSearch của Dev B)</description>
+    <flexiPage>SR_Customer_Search</flexiPage>
+    <label>Tìm kiếm CSKH</label>
+    <motif>Custom62: Magnifying Glass</motif>
+</CustomTab>

@@ -26,8 +26,8 @@ jest.mock('@salesforce/label/c.SR_MSG_30', () => ({ default: 'Yêu cầu {0} đ�
 });
 
 const ROWS = [
-    { id: 'a00000000000001AAA', requestNumber: 'RR-2610-00001', lastModified: '2026-10-22T01:00:00.000Z' },
-    { id: 'a00000000000002AAA', requestNumber: 'RR-2610-00002', lastModified: '2026-10-22T02:00:00.000Z' }
+    { id: 'a00000000000001AAA', requestNumber: 'RR-2610-00001', versionToken: '1761094800000' },
+    { id: 'a00000000000002AAA', requestNumber: 'RR-2610-00002', versionToken: '1761098400000' }
 ];
 
 // Chờ Apex giả lập trả kết quả và component render lại (vài vòng microtask)
@@ -64,7 +64,12 @@ describe('c-sr-approval-workspace', () => {
     });
 
     it('duyệt hàng loạt hiện MSG-11 và lý do của từng dòng lỗi', async () => {
-        decide.mockResolvedValue({ succeeded: 1, errors: [{ requestId: ROWS[1].id, code: 'SELF_APPROVAL' }] });
+        // Kết quả theo SR_ApprovalQueueService.DecisionSummary; FORBIDDEN chưa có label nên hiện câu của SR_ApprovalService
+        decide.mockResolvedValue({
+            succeeded: 1,
+            total: 2,
+            errors: [{ requestId: ROWS[1].id, code: 'FORBIDDEN', message: 'Người tạo yêu cầu không được tự duyệt.' }]
+        });
         const element = render();
         const toasts = collectToasts(element);
         await flushPromises();
@@ -76,7 +81,7 @@ describe('c-sr-approval-workspace', () => {
         await flushPromises();
 
         expect(decide).toHaveBeenCalledWith({
-            itemsJson: JSON.stringify(ROWS.map((r) => ({ requestId: r.id, lastModified: r.lastModified }))),
+            itemsJson: JSON.stringify(ROWS.map((r) => ({ requestId: r.id, versionToken: r.versionToken }))),
             approve: true,
             reason: null
         });
@@ -84,10 +89,10 @@ describe('c-sr-approval-workspace', () => {
         expect(toasts).toEqual([expect.objectContaining({ title: summary, variant: 'warning' })]);
         expect(element.shadowRoot.querySelector('p.slds-text-title_bold').textContent).toBe(summary);
         const reasons = [...element.shadowRoot.querySelectorAll('li')].map((li) => li.textContent);
-        expect(reasons).toEqual(['RR-2610-00002: Bạn không thể duyệt yêu cầu do chính mình tạo.']);
+        expect(reasons).toEqual(['RR-2610-00002: Người tạo yêu cầu không được tự duyệt.']);
     });
 
-    it('chỉ báo COMPLETED / REFUND_FAILED của cửa hàng mình từ Return_Request_Event__e', async () => {
+    it('chỉ báo COMPLETED / REFUND_FAILED của cửa hàng mình từ SR_UI_Notice__e', async () => {
         let handler;
         isEmpEnabled.mockResolvedValue(true);
         subscribe.mockImplementation((channel, replayId, callback) => {
@@ -98,7 +103,9 @@ describe('c-sr-approval-workspace', () => {
         const toasts = collectToasts(element);
         getMyStores.emit([{ label: 'HCM-012 – Quận 1', value: 'a0S000000000001AAA', storeCode: 'HCM-012' }]);
         await flushPromises();
-        expect(subscribe).toHaveBeenCalledWith('/event/Return_Request_Event__e', -1, expect.any(Function));
+        // Chỉ 1 kênh: không nghe thêm Return_Request_Event__e (POS/App), tránh 2 toast cho cùng 1 kết quả
+        expect(subscribe).toHaveBeenCalledTimes(1);
+        expect(subscribe).toHaveBeenCalledWith('/event/SR_UI_Notice__e', -1, expect.any(Function));
 
         const send = (payload) => handler({ data: { payload: { Request_Number__c: 'RR-2610-00001', ...payload } } });
         send({ Store_Code__c: 'HCM-012', Result__c: 'COMPLETED', Amount__c: 1992000 });
@@ -118,7 +125,7 @@ describe('c-sr-approval-workspace', () => {
             errorHandler = callback;
         });
         isEmpEnabled.mockResolvedValue(true);
-        subscribe.mockResolvedValue({ channel: '/event/Return_Request_Event__e' });
+        subscribe.mockResolvedValue({ channel: '/event/SR_UI_Notice__e' });
         render();
         await flushPromises();
         expect(subscribe).toHaveBeenCalledTimes(1);

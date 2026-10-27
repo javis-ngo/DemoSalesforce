@@ -1,6 +1,6 @@
 // =====================================================================
-// SmartReturn – Seed 4/4: yêu cầu đổi trả mẫu, tạo qua service của Dũng (DUC-02)
-// Cần SR_ReturnRequestService.createRequests và SR_DTO.CreateRequest (tên theo Guide-DevC).
+// SmartReturn – Seed 4/4: yêu cầu đổi trả mẫu, tạo qua service của Dev A (Đức)
+// Cần SR_ReturnRequestService.createRequests và SR_CreateRequestDTO / SR_CreateResultDTO.
 // Đi qua service nên tiền hoàn, cấp duyệt, lịch sử trạng thái và chia sẻ đều như thật:
 //  - Anh Khoa: 3 yêu cầu trong 30 ngày (để test UAT-03)
 //  - Anh Tuấn: laptop 25tr chờ QLV duyệt, lùi giờ gửi về 30 giờ trước (demo cảnh báo quá hạn)
@@ -27,7 +27,7 @@ for (OrderItem oi : [
 }
 
 // Kênh POS: tự duyệt thì vào Inspecting (không bị job đêm hủy như Awaiting Goods của App)
-List<SR_DTO.CreateRequest> requests = new List<SR_DTO.CreateRequest>();
+List<SR_CreateRequestDTO> requests = new List<SR_CreateRequestDTO>();
 for (List<Object> p : plan) {
     OrderItem oi = lineOf.get((String) p[0] + '|' + (String) p[1]);
     if (oi == null) {
@@ -46,13 +46,12 @@ for (List<Object> p : plan) {
             }
         }
     };
-    requests.add((SR_DTO.CreateRequest) JSON.deserialize(JSON.serialize(body), SR_DTO.CreateRequest.class));
+    requests.add((SR_CreateRequestDTO) JSON.deserialize(JSON.serialize(body), SR_CreateRequestDTO.class));
 }
-List<Object> results = SR_ReturnRequestService.createRequests(requests);
+List<SR_CreateResultDTO> results = SR_ReturnRequestService.createRequests(requests);
 for (Integer i = 0; i < results.size(); i++) {
-    Map<String, Object> r = (Map<String, Object>) JSON.deserializeUntyped(JSON.serialize(results[i]));
-    if (r.get('success') == false) {
-        System.debug('SEED | LỖI tạo ' + (String) plan[i][5] + ': ' + JSON.serialize(r).left(500));
+    if (results[i].success != true) {
+        System.debug('SEED | LỖI tạo ' + (String) plan[i][5] + ': ' + JSON.serialize(results[i].errors).left(500));
     }
 }
 

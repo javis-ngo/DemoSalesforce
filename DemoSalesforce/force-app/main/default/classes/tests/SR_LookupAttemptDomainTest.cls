@@ -14,6 +14,16 @@ private class SR_LookupAttemptDomainTest {
         Assert.isTrue(SR_LookupAttemptDomain.isLocked(5, s), 'Sai 5 lần thì khóa');
     }
 
+    // Bản ghi Default chưa điền 2 field Portal thì vẫn khóa sau 5 lần sai trong 15 phút
+    @IsTest
+    static void usesDefaultsWhenSettingIsBlank() {
+        SR_Setting__mdt s = new SR_Setting__mdt();
+        Datetime now = Datetime.newInstanceGmt(2026, 10, 20, 10, 0, 0);
+        Assert.areEqual(now.addMinutes(-15), SR_LookupAttemptDomain.lockWindowStart(s, now));
+        Assert.isFalse(SR_LookupAttemptDomain.isLocked(4, s), 'Sai 4 lần chưa khóa');
+        Assert.isTrue(SR_LookupAttemptDomain.isLocked(5, s), 'Sai 5 lần thì khóa');
+    }
+
     // Key__c chỉ chứa được 80 ký tự
     @IsTest
     static void failedAttemptKeyFitsField() {
