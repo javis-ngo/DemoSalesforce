@@ -2,21 +2,6 @@
 private class SR_InspectionServiceTest {
     private static final String STORE_CODE = 'DUC07';
     private static final String ACCOUNT_NAME = 'DUC-07 Inspection Customer';
-    private static FakeRefundEnqueuer fakeRefundEnqueuer;
-    private class FakeRefundEnqueuer implements SR_RefundEnqueuer {
-        public Set<Id> enqueuedIds = new Set<Id>();
-        public void enqueue(Set<Id> requestIds) {
-            enqueuedIds.addAll(requestIds);
-        }
-    }
-    private class RefundEnqueueTestException extends Exception {
-    }
-
-    private class ThrowingRefundEnqueuer implements SR_RefundEnqueuer {
-        public void enqueue(Set<Id> requestIds) {
-            throw new RefundEnqueueTestException('Mock enqueue failure');
-        }
-    }
     @TestSetup
     static void setupData() {
         SR_TestDataFactory.createStoreSetup(
@@ -64,12 +49,13 @@ private class SR_InspectionServiceTest {
             SR_Setting__mdt.Enable_PayHub__c,
             payHubEnabled
         );
-        fakeRefundEnqueuer = null;
-        SR_InspectionService.resetRefundEnqueuer();
-        if (payHubEnabled) {
-            fakeRefundEnqueuer = new FakeRefundEnqueuer();
-            SR_InspectionService.setRefundEnqueuer(fakeRefundEnqueuer);
-        }
+        // Job SR_RefundService chạy khi Test.stopTest: PayHub giả lập trả PENDING nên yêu cầu giữ REFUND_PROCESSING
+        SR_PayHubClient.useMockOverride = true;
+        SR_PayHubClient.mockScenarioOverride = SR_PayHubClient.SCENARIO_PENDING;
+    }
+    // Số job SR_RefundService đã xếp trong transaction hiện tại (gọi trước Test.stopTest)
+    private static Integer queuedRefundJobs() {
+        return Limits.getQueueableJobs();
     }
     private static Order baseOrder() {
         return [
@@ -188,6 +174,7 @@ private class SR_InspectionServiceTest {
         List<SR_ActionResultDTO> results = SR_InspectionService.complete(
             new List<SR_InspectionRequestDTO>{ input }
         );
+        Integer queuedJobs = queuedRefundJobs();
         Test.stopTest();
         Assert.isTrue(
             results[0].success,
@@ -195,7 +182,7 @@ private class SR_InspectionServiceTest {
             + ', message=' + String.valueOf(results[0].message)
         );
         Assert.areEqual(SR_StatusMachine.REFUND_PROCESSING, results[0].status);
-        Assert.isTrue(fakeRefundEnqueuer.enqueuedIds.contains(requestRow.Id));
+        Assert.areEqual(1, queuedJobs, 'Phải xếp 1 job SR_RefundService');
         Return_Request__c updated = reloadRequest(requestRow.Id);
         Assert.isNotNull(updated.Inspection_Completed_At__c);
         Assert.isTrue(updated.Actual_Refund__c > 0);
@@ -330,7 +317,7 @@ private class SR_InspectionServiceTest {
         Return_Request__c updated = reloadRequest(requestRow.Id);
         Assert.areEqual(SR_StatusMachine.REJECTED, updated.Status__c);
         Assert.areEqual('Không đạt kiểm định', updated.Rejection_Reason__c);
-        Assert.isFalse(fakeRefundEnqueuer.enqueuedIds.contains(requestRow.Id));
+        Assert.areEqual(0, queuedRefundJobs(), 'Yêu cầu bị từ chối không được gửi PayHub');
     }
     @IsTest
     static void complete_payHubDisabled_keepsInspectingAndMarksComplete() {
@@ -359,9 +346,10 @@ private class SR_InspectionServiceTest {
         Return_Request__c updated = reloadRequest(requestRow.Id);
         Assert.areEqual(SR_StatusMachine.INSPECTING, updated.Status__c);
         Assert.isNotNull(updated.Inspection_Completed_At__c);
-        Assert.isNull(
-            fakeRefundEnqueuer,
-            'PayHub disabled must not configure the refund enqueuer.'
+        Assert.areEqual(
+            0,
+            queuedRefundJobs(),
+            'PayHub disabled must not enqueue a refund job.'
         );
     }
     @IsTest
@@ -511,30 +499,6 @@ private class SR_InspectionServiceTest {
             requestLines(requestRow.Id)[0].Actual_Refund__c,
             'Passed zero-rate line must persist Actual_Refund__c = 0.'
         );
-    }
-    @IsTest
-    static void complete_payHubEnabledWithoutEnqueuer_returnsConfigError() {
-        SR_TestDataFactory.resetConfig();
-        SR_TestDataFactory.seedSmartReturnTestConfig();
-        SR_InspectionService.resetRefundEnqueuer();
-        Return_Request__c requestRow = createInspectionRequest(
-            SR_TestDataFactory.STATUS_INSPECTING,
-            false,
-            1
-        );
-        List<Return_Request_Line__c> lines = requestLines(requestRow.Id);
-        SR_InspectionRequestDTO input = inspectionInput(
-            requestRow,
-            lines,
-            new List<String>{ 'PASSED' },
-            new List<String>{ 'SEALED' },
-            new List<String>{ null }
-        );
-        List<SR_ActionResultDTO> results = SR_InspectionService.complete(
-            new List<SR_InspectionRequestDTO>{ input }
-        );
-        Assert.isFalse(results[0].success);
-        Assert.areEqual(SR_ErrorCode.CONFIGURATION_ERROR, results[0].errorCode);
     }
     @IsTest
     static void complete_bulkFiftyValid_doesNotHitLimits() {
@@ -878,9 +842,7 @@ private class SR_InspectionServiceTest {
     @IsTest
     static void complete_refundEnqueueFailure_returnsInternalError() {
         seedConfig(true);
-        SR_InspectionService.setRefundEnqueuer(
-            new ThrowingRefundEnqueuer()
-        );
+        SR_RefundService.forceEnqueueFailureForTest = true;
         Return_Request__c requestRow = createInspectionRequest(
             SR_TestDataFactory.STATUS_INSPECTING,
             false,

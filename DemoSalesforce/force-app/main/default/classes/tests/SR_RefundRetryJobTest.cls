@@ -1,6 +1,6 @@
 /**
  * Test cho SR_RefundRetryJob và SR_RefundService.retryDue (B6, BR-12).
- * [DEV A] Các test có tạo Return_Request__c cần picklist Status__c có REFUND_PROCESSING (hiện chỉ có NEW).
+ * Công tắc B.4 ghi đè bằng SR_TestDataFactory.overrideConfig (Dev A).
  * Chạy: sf apex run test --class-names SR_RefundRetryJobTest --result-format human
  */
 @IsTest
@@ -19,7 +19,8 @@ private class SR_RefundRetryJobTest {
     }
 
     private static void enablePayHub(Boolean enabled) {
-        SR_RefundService.settingOverride = new SR_Setting__mdt(Enable_PayHub__c = enabled);
+        SR_TestDataFactory.seedSmartReturnTestConfig();
+        SR_TestDataFactory.overrideConfig(SR_Setting__mdt.Enable_PayHub__c, enabled);
     }
 
     @IsTest

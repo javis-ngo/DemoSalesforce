@@ -8,14 +8,14 @@
  *  - Mọi lần gửi được ghi Integration_Log__c qua SR_PayHubClient (BR-14).
  *  - retryDue(): SR_RefundRetryJob (B6) gọi mỗi 15 phút; applyFinalResult()/notifyAccounting() dùng lại ở
  *    SR_ManualRefundService (B7) và SR_RefundCallbackService (B9).
- *  - Chuyển trạng thái qua SR_StatusMachine (chặn chuyển sai, ghi lịch sử FR-06); phát sự kiện kết quả qua
- *    SR_EventPublisher (Publish After Commit, BR-15).
- * [DEV A] Phụ thuộc phạm vi Dev A (tìm "[DEV A]" để tích hợp):
- *  - SR_StatusMachine.change(...) chưa có trong repo → class này chưa compile được cho tới khi Dev A merge.
- *  - Object/field/Status__c (REFUND_PROCESSING, COMPLETED, REFUND_FAILED, Refund_Attempts__c, ...): Dev A sở hữu.
- *  - Dev A gọi SR_RefundService.enqueue(ids) khi kiểm định xong (SR_InspectionService) sau khi chuyển sang REFUND_PROCESSING.
- *  - Trigger/service của Dev A KHÔNG được gọi SR_EventPublisher cho COMPLETED/REFUND_FAILED, vì class này đã tự phát (tránh gửi trùng).
+ *  - Chuyển trạng thái qua SR_StatusMachine.change (chặn chuyển sai MSG-20, ghi lịch sử FR-06); phát sự kiện kết quả
+ *    qua SR_EventPublisher (Publish After Commit, BR-15).
+ *  - Tham số (công tắc B.4, số lần thử, khoảng cách thử lại) đọc qua SR_Config (Phụ lục B.3, B.4).
+ * Tích hợp Dev A:
+ *  - SR_InspectionService.complete gọi SR_RefundService.enqueue(ids) sau khi chuyển yêu cầu sang REFUND_PROCESSING.
+ *  - Trigger/service của Dev A KHÔNG gọi SR_EventPublisher cho COMPLETED/REFUND_FAILED, vì class này đã tự phát (tránh gửi trùng).
  * without sharing: Queueable chạy dưới quyền người bấm "Hoàn tất kiểm định"; job thử lại chạy dưới quyền người lên lịch.
+ * Lưu ý: SR_StatusMachine đọc lại yêu cầu WITH USER_MODE, nên người chạy cần quyền xem yêu cầu (permission set – Dev A).
  * Owner: Dev B
  */
 public without sharing class SR_RefundService implements Queueable, Database.AllowsCallouts {
@@ -27,21 +27,28 @@ public without sharing class SR_RefundService implements Queueable, Database.All
     @TestVisible
     private static final Integer RETRY_SCAN_LIMIT = 100;
 
-    private static final String SETTING_DEVELOPER_NAME = 'Default';
-    private static final Integer DEFAULT_MAX_ATTEMPTS = 3;
-    private static final Integer DEFAULT_RETRY_MINUTES = 15;
+    // = độ dài field Return_Request_History__c.Note__c
+    private static final Integer HISTORY_NOTE_MAX_LENGTH = 1000;
     private static final String ACCOUNTING_GROUP = 'SR_Accounting';
     private static final String NOTIFICATION_TYPE = 'SR_Notification';
     private static final String CONTEXT = 'SR_RefundService';
 
-    // [DEV A] Ghi chú lịch sử truyền vào SR_StatusMachine.change; Dev A có thể đổi nếu StatusMachine tự sinh note
+    // Ghi chú lịch sử khi chuyển trạng thái từ kết quả PayHub
     private static final Map<String, String> STATUS_NOTES = new Map<String, String>{
         SR_RefundDomain.STATUS_COMPLETED => 'PayHub hoàn tiền thành công',
         SR_RefundDomain.STATUS_REFUND_FAILED => 'PayHub hoàn tiền lỗi, chuyển Kế toán xử lý'
     };
 
+    // Test lỗi xếp job ở SR_InspectionService (cùng kiểu SR_StatusMachine.forceHistoryFailureForTest)
     @TestVisible
-    private static SR_Setting__mdt settingOverride;
+    private static Boolean forceEnqueueFailureForTest = false;
+
+    // SR_StatusMachine từ chối chuyển trạng thái (vd. MSG-20 khi người khác vừa đổi trạng thái)
+    public class StatusChangeException extends Exception {
+    }
+
+    private class EnqueueException extends Exception {
+    }
 
     private final List<Id> requestIds;
 
@@ -50,12 +57,15 @@ public without sharing class SR_RefundService implements Queueable, Database.All
     }
 
     /**
-     * Xếp job gửi PayHub. Dev A gọi khi kiểm định xong; job thử lại (B6) và job đêm cũng gọi hàm này.
+     * Xếp job gửi PayHub. SR_InspectionService gọi khi kiểm định xong; job thử lại (B6) và job đêm cũng gọi hàm này.
      * Trả về Id job, hoặc null nếu không có gì để gửi hoặc công tắc B.4 "Gửi PayHub" đang tắt
      * (yêu cầu vẫn ở REFUND_PROCESSING, bật lại công tắc thì job đêm gửi tiếp).
      */
     public static Id enqueue(Set<Id> requestIds) {
-        if (requestIds == null || requestIds.isEmpty() || setting()?.Enable_PayHub__c == false) {
+        if (Test.isRunningTest() && forceEnqueueFailureForTest) {
+            throw new EnqueueException('Forced enqueue failure.');
+        }
+        if (requestIds == null || requestIds.isEmpty() || SR_Config.isPayHubEnabled() == false) {
             return null;
         }
         return System.enqueueJob(new SR_RefundService(new List<Id>(requestIds)));
@@ -69,7 +79,7 @@ public without sharing class SR_RefundService implements Queueable, Database.All
      */
     public static Integer retryDue() {
         // Công tắc B.4 tắt: giữ nguyên giờ hẹn, bật lại thì lần quét kế tiếp gửi
-        if (setting()?.Enable_PayHub__c == false) {
+        if (SR_Config.isPayHubEnabled() == false) {
             return 0;
         }
         List<Return_Request__c> due = SR_RefundSelector.selectDueForRetry(System.now(), RETRY_SCAN_LIMIT);
@@ -90,17 +100,19 @@ public without sharing class SR_RefundService implements Queueable, Database.All
      * B7 (Kế toán hoàn tay), B9 (PayHub callback): ghi kết quả cuối cho 1 yêu cầu đã khóa FOR UPDATE.
      * r cần Id, Name, Status__c (trạng thái hiện tại), Actual_Refund__c, Store__r.Store_Code__c.
      * changes: các field hoàn tiền cần ghi (PayHub_Refund_Id__c, Last_Refund_Error__c...), có Id.
-     * Lỗi thì rollback toàn bộ và ném ra để nơi gọi trả lỗi.
+     * Lỗi thì rollback toàn bộ và ném ra để nơi gọi trả lỗi; SR_StatusMachine từ chối → StatusChangeException
+     * kèm câu báo của SR_StatusMachine (MSG-20).
      */
     public static void applyFinalResult(Return_Request__c r, Return_Request__c changes, String toStatus, String note) {
         Savepoint sp = Database.setSavepoint();
         try {
             changes.Next_Retry_At__c = null;
             update changes;
-            // [DEV A] SR_StatusMachine thuộc Dev A (chưa có trong repo): kiểm tra chuyển hợp lệ, ghi lịch sử
-            SR_StatusMachine.change(
-                new List<Return_Request__c>{ new Return_Request__c(Id = r.Id, Status__c = r.Status__c) },
-                toStatus, note);
+            SR_ActionResultDTO result = SR_StatusMachine.change(
+                new List<SR_StatusChangeDTO>{ statusChange(r, toStatus, note) })[0];
+            if (result.success != true) {
+                throw new StatusChangeException(result.message);
+            }
             r.Status__c = toStatus;
             SR_EventPublisher.publishResult(new List<Return_Request__c>{ r });
         } catch (Exception e) {
@@ -173,14 +185,13 @@ public without sharing class SR_RefundService implements Queueable, Database.All
         if (reqs.isEmpty()) {
             return;
         }
-        SR_Setting__mdt s = setting();
-        Integer maxAttempts = intOrDefault(s?.PayHub_Max_Total_Attempts__c, DEFAULT_MAX_ATTEMPTS);
-        Integer retryMinutes = intOrDefault(s?.PayHub_Retry_Interval_Minutes__c, DEFAULT_RETRY_MINUTES);
+        Integer maxAttempts = SR_Config.payHubMaxTotalAttempts();
+        Integer retryMinutes = SR_Config.payHubRetryIntervalMinutes();
         Datetime now = System.now();
 
         List<Return_Request__c> changes = new List<Return_Request__c>();
-        Map<String, List<Return_Request__c>> transitions = new Map<String, List<Return_Request__c>>();
-        List<Return_Request__c> finished = new List<Return_Request__c>();
+        List<Return_Request__c> transitioned = new List<Return_Request__c>();
+        List<SR_StatusChangeDTO> statusChanges = new List<SR_StatusChangeDTO>();
         Map<Id, String> failedErrors = new Map<Id, String>();
 
         for (Return_Request__c r : reqs) {
@@ -189,29 +200,34 @@ public without sharing class SR_RefundService implements Queueable, Database.All
             if (d.toStatus == null) {
                 continue;
             }
-            if (!transitions.containsKey(d.toStatus)) {
-                transitions.put(d.toStatus, new List<Return_Request__c>());
-            }
-            // [DEV A] Giả định hợp đồng SR_StatusMachine.change(List<Return_Request__c>, String toStatus, String note):
-            // kiểm tra chuyển hợp lệ (MSG-20), set Status__c, ghi Return_Request_History__c và tự update bản ghi.
-            // Chỉ Id + trạng thái hiện tại: SR_StatusMachine kiểm tra REFUND_PROCESSING → toStatus,
-            // và không ghi đè các field hoàn tiền vừa cập nhật ở trên
-            transitions.get(d.toStatus).add(new Return_Request__c(Id = r.Id, Status__c = r.Status__c));
-            r.Status__c = d.toStatus;
-            finished.add(r);
+            // Một lần gọi SR_StatusMachine cho cả lô; mỗi yêu cầu mang trạng thái đích riêng
+            transitioned.add(r);
+            statusChanges.add(statusChange(r, d.toStatus, STATUS_NOTES.get(d.toStatus)));
             if (d.toStatus == SR_RefundDomain.STATUS_REFUND_FAILED) {
                 failedErrors.put(r.Id, d.error);
-                logger.warn(CONTEXT + '.applyResults', CONTEXT, r.Name, d.error, r.Id);
             }
         }
 
+        List<Return_Request__c> finished = new List<Return_Request__c>();
         Savepoint sp = Database.setSavepoint();
         try {
+            // Field hoàn tiền (số lần thử, refundId, lỗi) ghi nhận lần gọi PayHub vừa xảy ra, nên ghi kể cả khi
+            // chuyển trạng thái bị từ chối
             update changes;
-            // Tối đa 2 lần (COMPLETED, REFUND_FAILED): mỗi trạng thái đích một lần gọi, không theo từng bản ghi
-            for (String toStatus : transitions.keySet()) {
-                // [DEV A] SR_StatusMachine thuộc Dev A (chưa có trong repo)
-                SR_StatusMachine.change(transitions.get(toStatus), toStatus, STATUS_NOTES.get(toStatus));
+            List<SR_ActionResultDTO> statusResults = SR_StatusMachine.change(statusChanges);
+            for (Integer i = 0; i < statusResults.size(); i++) {
+                Return_Request__c r = transitioned[i];
+                SR_ActionResultDTO res = statusResults[i];
+                if (res.success == true) {
+                    r.Status__c = statusChanges[i].toStatus;
+                    finished.add(r);
+                } else {
+                    // vd. người khác vừa đổi trạng thái: không phát sự kiện, không báo Kế toán cho yêu cầu này
+                    failedErrors.remove(r.Id);
+                    logger.error(CONTEXT + '.applyResults', CONTEXT, r.Name,
+                        'Không chuyển được sang ' + statusChanges[i].toStatus + ': ' + res.errorCode + ' ' + res.message,
+                        r.Id, null);
+                }
             }
             SR_EventPublisher.publishResult(finished);
         } catch (Exception e) {
@@ -219,6 +235,11 @@ public without sharing class SR_RefundService implements Queueable, Database.All
             throw e;
         }
 
+        for (Return_Request__c r : finished) {
+            if (failedErrors.containsKey(r.Id)) {
+                logger.warn(CONTEXT + '.applyResults', CONTEXT, r.Name, failedErrors.get(r.Id), r.Id);
+            }
+        }
         notifyAccounting(finished, failedErrors);
     }
 
@@ -259,11 +280,13 @@ public without sharing class SR_RefundService implements Queueable, Database.All
         }
     }
 
-    private static SR_Setting__mdt setting() {
-        return (settingOverride != null) ? settingOverride : SR_Setting__mdt.getInstance(SETTING_DEVELOPER_NAME);
-    }
-
-    private static Integer intOrDefault(Decimal value, Integer fallback) {
-        return (value == null || value <= 0) ? fallback : value.intValue();
+    // correlationId = mã yêu cầu = Idempotency-Key, để nối dòng lịch sử với Integration_Log__c
+    private static SR_StatusChangeDTO statusChange(Return_Request__c r, String toStatus, String note) {
+        SR_StatusChangeDTO change = new SR_StatusChangeDTO();
+        change.requestId = r.Id;
+        change.toStatus = toStatus;
+        change.note = (note == null) ? null : note.abbreviate(HISTORY_NOTE_MAX_LENGTH);
+        change.correlationId = r.Name;
+        return change;
     }
 }

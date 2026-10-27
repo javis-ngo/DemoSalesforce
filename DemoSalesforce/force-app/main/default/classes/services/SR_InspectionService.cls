@@ -3,8 +3,6 @@ public with sharing class SR_InspectionService {
     private static final String RESULT_FAILED = 'FAILED';
     private static final String ALL_FAILED_REASON = 'Không đạt kiểm định';
     private static final Integer MAX_BATCH_SIZE = 200;
-    @TestVisible
-    private static SR_RefundEnqueuer refundEnqueuer;
     private class WorkItem {
         Integer index;
         SR_InspectionRequestDTO input;
@@ -16,14 +14,6 @@ public with sharing class SR_InspectionService {
         String targetStatus;
         String rejectionReason;
         Boolean needsRefundEnqueue = false;
-    }
-    @TestVisible
-    static void setRefundEnqueuer(SR_RefundEnqueuer value) {
-        refundEnqueuer = value;
-    }
-    @TestVisible
-    static void resetRefundEnqueuer() {
-        refundEnqueuer = null;
     }
     @AuraEnabled
     public static List<SR_ActionResultDTO> complete(
@@ -268,7 +258,8 @@ public with sharing class SR_InspectionService {
         }
         if (!refundRequestIds.isEmpty()) {
             try {
-                refundEnqueuer.enqueue(refundRequestIds);
+                // FR-11 / B5: gửi PayHub bất đồng bộ (Queueable của Dev B), người dùng không phải chờ (NFR-04)
+                SR_RefundService.enqueue(refundRequestIds);
             } catch (Exception ex) {
                 for (WorkItem item : work) {
                     if (
@@ -472,14 +463,6 @@ public with sharing class SR_InspectionService {
             item.targetStatus = SR_StatusMachine.REJECTED;
             item.rejectionReason = ALL_FAILED_REASON;
         } else if (payHubEnabled) {
-            if (refundEnqueuer == null) {
-                item.result = failure(
-                    item.input.requestId,
-                    SR_ErrorCode.CONFIGURATION_ERROR,
-                    'Chưa cấu hình SR_RefundEnqueuer cho PayHub.'
-                );
-                return;
-            }
             item.targetStatus = SR_StatusMachine.REFUND_PROCESSING;
             item.needsRefundEnqueue = true;
         }

@@ -55,7 +55,17 @@ public with sharing class SR_CustomerSearchService {
         @AuraEnabled public List<Map<String, Object>> rows = new List<Map<String, Object>>();
     }
 
+    // Test nhánh lỗi MSG-90 của controller (cùng kiểu SR_StatusMachine.forceHistoryFailureForTest)
+    @TestVisible
+    private static Boolean forceFailureForTest = false;
+
+    private class SearchException extends Exception {
+    }
+
     public static List<ResultGroup> searchAll(String term) {
+        if (Test.isRunningTest() && forceFailureForTest) {
+            throw new SearchException('Forced search failure.');
+        }
         List<ResultGroup> groups = new List<ResultGroup>();
         String text = (term == null) ? '' : term.trim();
         if (text.length() < MIN_TERM_LENGTH) {

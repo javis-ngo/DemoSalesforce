@@ -76,7 +76,14 @@ public without sharing class SR_RefundCallbackService {
             changes.Last_Refund_Error__c = SR_RefundDomain.describeCallbackFailure(failureReason);
             note = changes.Last_Refund_Error__c;
         }
-        SR_RefundService.applyFinalResult(r, changes, toStatus, note);
+        try {
+            SR_RefundService.applyFinalResult(r, changes, toStatus, note);
+        } catch (SR_RefundService.StatusChangeException e) {
+            // SR_StatusMachine từ chối chuyển (vd. trạng thái vừa đổi): như gọi lặp – 200, không đổi dữ liệu (E.4)
+            logger.warn(CONTEXT + '.apply', CONTEXT, r.Name,
+                'Bỏ qua callback ' + status + ': ' + e.getMessage(), r.Id);
+            return;
+        }
 
         if (toStatus == SR_RefundDomain.STATUS_REFUND_FAILED) {
             SR_RefundService.notifyAccounting(

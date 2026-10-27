@@ -2,7 +2,7 @@
  * Client gửi lệnh hoàn tiền tới PayHub.
  *
  * - Callout thật: Named Credential "PayHub".
- * - Mock runtime: điều khiển bởi SR_Setting__mdt.Default:
+ * - Mock runtime: điều khiển bởi SR_Setting__mdt.Default (đọc qua SR_Config):
  * PayHub_Use_Mock__c và PayHub_Mock_Scenario__c.
  */
 public with sharing class SR_PayHubClient {
@@ -17,7 +17,6 @@ public with sharing class SR_PayHubClient {
     public static final String SCENARIO_ERROR = 'ERROR';
     public static final String SCENARIO_TIMEOUT = 'TIMEOUT';
 
-    private static final String SETTING_DEVELOPER_NAME = 'Default';
     private static final String ENDPOINT =
         'callout:PayHub/v1/refunds';
 
@@ -274,10 +273,14 @@ public with sharing class SR_PayHubClient {
             : setting.PayHub_Mock_Scenario__c;
     }
 
+    // Qua SR_Config để test ghi đè được bằng SR_TestDataFactory.overrideConfig.
+    // Cấu hình thiếu thì trả null → dùng giá trị mặc định (không mock, timeout 10 giây).
     private static SR_Setting__mdt getSetting() {
-        return SR_Setting__mdt.getInstance(
-            SETTING_DEVELOPER_NAME
-        );
+        try {
+            return SR_Config.setting();
+        } catch (SR_ConfigurationException e) {
+            return null;
+        }
     }
 
     /**

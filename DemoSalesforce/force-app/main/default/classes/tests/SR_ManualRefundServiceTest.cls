@@ -1,13 +1,13 @@
 /**
  * Test cho SR_ManualRefundService và SR_RefundManualController (B7, FR-14).
- * [DEV A] Các test có tạo Return_Request__c cần picklist Status__c có REFUND_FAILED / REFUND_PROCESSING / COMPLETED
- *         và SR_StatusMachine (change, labelOf).
+ * Chuyển trạng thái + lịch sử qua SR_StatusMachine (Dev A); trạng thái khởi tạo ghi thẳng khi insert.
  * Chạy: sf apex run test --class-names SR_ManualRefundServiceTest --result-format human
  */
 @IsTest
 private class SR_ManualRefundServiceTest {
 
     private static Return_Request__c insertRequest(String status) {
+        SR_TestDataFactory.seedSmartReturnTestConfig();      // SR_Config cho công tắc B.4 khi phát sự kiện
         Return_Request__c r = new Return_Request__c(Channel__c = 'POS', Status__c = status);
         insert r;
         return r;
@@ -64,6 +64,30 @@ private class SR_ManualRefundServiceTest {
         Return_Request__c after = [SELECT Status__c, PayHub_Refund_Id__c FROM Return_Request__c WHERE Id = :r.Id];
         Assert.areEqual(SR_RefundDomain.STATUS_COMPLETED, after.Status__c);
         Assert.areEqual('PH-MANUAL-001', after.PayHub_Refund_Id__c);
+        // FR-06: SR_StatusMachine ghi lịch sử, correlationId = mã yêu cầu
+        Return_Request_History__c h = [
+            SELECT From_Status__c, Note__c, Correlation_Id__c FROM Return_Request_History__c
+            WHERE Return_Request__c = :r.Id AND To_Status__c = :SR_RefundDomain.STATUS_COMPLETED
+        ];
+        Assert.areEqual(SR_RefundDomain.STATUS_REFUND_FAILED, h.From_Status__c);
+        Assert.isTrue(h.Note__c.contains('PH-MANUAL-001'));
+        Assert.isNotNull(h.Correlation_Id__c);
+    }
+
+    // Lỗi kỹ thuật (cấu hình thiếu khi phát sự kiện) → rollback, controller trả MSG-90 kèm mã lỗi
+    @IsTest
+    static void controllerWrapsTechnicalErrorAsMsg90() {
+        Return_Request__c r = insertRequest(SR_RefundDomain.STATUS_REFUND_FAILED);
+        SR_TestDataFactory.overrideConfig(SR_Setting__mdt.PayHub_Timeout_Seconds__c, null);
+        SR_ManualRefundService.hasPermissionOverride = true;
+        try {
+            SR_RefundManualController.markManualRefund(r.Id, 'PH-1');
+            Assert.fail('Phải báo lỗi khi cấu hình thiếu');
+        } catch (AuraHandledException e) {
+            Assert.areNotEqual(SR_ManualRefundService.MSG_NO_PERMISSION, e.getMessage());
+        }
+        Assert.areEqual(SR_RefundDomain.STATUS_REFUND_FAILED,
+            [SELECT Status__c FROM Return_Request__c WHERE Id = :r.Id].Status__c);
     }
 
     // Controller trả nguyên câu nghiệp vụ cho LWC

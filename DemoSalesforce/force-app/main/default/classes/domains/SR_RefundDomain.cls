@@ -11,10 +11,10 @@
  */
 public inherited sharing class SR_RefundDomain {
 
-    // [DEV A] Giá trị Status__c do Dev A sở hữu (Phụ lục C); hiện picklist chỉ có NEW. Đổi tên thì sửa ở đây.
-    public static final String STATUS_REFUND_PROCESSING = 'REFUND_PROCESSING';
-    public static final String STATUS_COMPLETED = 'COMPLETED';
-    public static final String STATUS_REFUND_FAILED = 'REFUND_FAILED';
+    // Giá trị Status__c (Phụ lục C) lấy từ SR_StatusMachine (Dev A) – một nguồn duy nhất
+    public static final String STATUS_REFUND_PROCESSING = SR_StatusMachine.REFUND_PROCESSING;
+    public static final String STATUS_COMPLETED = SR_StatusMachine.COMPLETED;
+    public static final String STATUS_REFUND_FAILED = SR_StatusMachine.REFUND_FAILED;
 
     public static final String ERROR_INVALID_COMMAND = 'INVALID_COMMAND';
 

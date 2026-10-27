@@ -12,6 +12,18 @@ private class SR_CustomerSearchServiceTest {
         Assert.isTrue(SR_CustomerSearchController.searchAll(null).isEmpty());
     }
 
+    // Lỗi kỹ thuật: controller ghi log và trả MSG-90 kèm mã lỗi (NFR-09)
+    @IsTest
+    static void controllerWrapsErrorAsMsg90() {
+        SR_CustomerSearchService.forceFailureForTest = true;
+        try {
+            SR_CustomerSearchController.searchAll('0901');
+            Assert.fail('Phải báo lỗi');
+        } catch (AuraHandledException e) {
+            Assert.isFalse(e.getMessage().contains('Forced search failure'), 'Không lộ lỗi kỹ thuật cho người dùng');
+        }
+    }
+
     // Dấu "-" trong mã yêu cầu, dấu nháy... phải escape để SOSL không coi là toán tử
     @IsTest
     static void escapesSoslSpecialCharacters() {
