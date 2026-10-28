@@ -12,7 +12,7 @@
     </values>
     <values>
         <field>Product_Family__c</field>
-        <value xsi:type="xsd:string">PREPAID CARD</value>
+        <value xsi:type="xsd:string">Thẻ cào</value>
     </values>
     <values>
         <field>Return_Window_Days__c</field>
