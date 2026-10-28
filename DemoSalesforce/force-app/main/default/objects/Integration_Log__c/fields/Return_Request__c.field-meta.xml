@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Return_Request__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Return Request</label>
+    <referenceTo>Return_Request__c</referenceTo>
+    <relationshipLabel>Integration_Logs</relationshipLabel>
+    <relationshipName>Integration_Logs</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

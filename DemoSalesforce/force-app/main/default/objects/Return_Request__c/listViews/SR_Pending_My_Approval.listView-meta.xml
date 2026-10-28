@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SR_Pending_My_Approval</fullName>
+    <columns>NAME</columns>
+    <columns>Account__c</columns>
+    <columns>Store__c</columns>
+    <columns>Estimated_Refund__c</columns>
+    <columns>Approval_Level__c</columns>
+    <columns>Submitted_At__c</columns>
+    <columns>Approval_Due_At__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Status__c</field>
+        <operation>equals</operation>
+        <value>PENDING_APPROVAL</value>
+    </filters>
+    <filters>
+        <field>Assigned_To_Me__c</field>
+        <operation>equals</operation>
+        <value>1</value>
+    </filters>
+    <label>Chờ tôi duyệt</label>
+</ListView>

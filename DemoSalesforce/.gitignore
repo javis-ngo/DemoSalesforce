@@ -47,9 +47,8 @@ $RECYCLE.BIN/
 **/.venv/
 **/venv/
 
-# Custom Objects and Static Resources are included in the package.xml file, so we can ignore them in the .gitignore file.
-**/objects/
-**/staticresources/
+# Claude Code
+.claude/
 
 # JWT private keys and certificates
 server.key

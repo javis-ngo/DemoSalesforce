@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionSubtype>ScreenAction</actionSubtype>
+    <description>B7 - Kế toán xác nhận đã hoàn tiền thủ công: Refund Failed → Completed (FR-14). Mở LWC srManualRefund. Cần Custom Permission SR_Manual_Refund.</description>
+    <label>Hoàn tiền thủ công</label>
+    <lightningWebComponent>srManualRefund</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

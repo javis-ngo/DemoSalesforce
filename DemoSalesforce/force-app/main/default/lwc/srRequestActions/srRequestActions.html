@@ -1,0 +1,25 @@
+<template>
+    <template lwc:if={hasActions}>
+        <lightning-card title="Thao tác" icon-name="standard:record_update">
+            <div class="slds-p-horizontal_medium">
+                <template lwc:if={state.canReceiveGoods}>
+                    <lightning-button
+                        variant="brand"
+                        label="Nhận hàng"
+                        onclick={handleReceive}
+                        disabled={isBusy}
+                    ></lightning-button>
+                </template>
+                <template lwc:if={state.canCancel}>
+                    <lightning-button
+                        class="slds-m-left_x-small"
+                        label="Hủy yêu cầu"
+                        variant="destructive-text"
+                        onclick={handleCancel}
+                        disabled={isBusy}
+                    ></lightning-button>
+                </template>
+            </div>
+        </lightning-card>
+    </template>
+</template>

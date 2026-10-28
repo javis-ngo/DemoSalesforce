@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SmartReturn_Setting_Values_Must_Be_Posit</fullName>
+    <active>true</active>
+    <errorConditionFormula>OR(
+    Auto_Approval_Threshold__c &lt; 0,
+    Store_Manager_Max_Threshold__c &lt;= 0,
+    Risk_Request_Count__c &lt;= 0,
+    Risk_Total_Amount__c &lt;= 0,
+    Risk_Window_Days__c &lt;= 0,
+    Approval_SLA_Hours__c &lt;= 0,
+    Goods_Due_Days__c &lt;= 0,
+    PayHub_Timeout_Seconds__c &lt;= 0,
+    PayHub_Max_Total_Attempts__c &lt;= 0,
+    PayHub_Retry_Interval_Minutes__c &lt;= 0
+)</errorConditionFormula>
+    <errorMessage>SmartReturn numeric settings must contain valid positive values.</errorMessage>
+</ValidationRule>

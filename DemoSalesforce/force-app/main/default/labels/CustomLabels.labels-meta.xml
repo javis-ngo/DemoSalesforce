@@ -140,4 +140,18 @@
         <shortDescription>Không phải người được giao duyệt</shortDescription>
         <value>Bạn không phải người được giao duyệt yêu cầu {0}.</value>
     </labels>
+    <labels>
+        <fullName>SR_ERR_UNAUTHORIZED</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Khách portal vào trang nội bộ</shortDescription>
+        <value>Unauthorized – Bạn không có quyền truy cập trang này. Trang chỉ dành cho nhân viên SmartReturn.</value>
+    </labels>
+    <labels>
+        <fullName>SR_Portal_Url</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Địa chỉ trang Portal khách hàng</shortDescription>
+        <value>https://orgfarm-a8fbb36d2b-dev-ed.develop.my.site.com/doitra/</value>
+    </labels>
 </CustomLabels>

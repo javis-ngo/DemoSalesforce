@@ -119,36 +119,33 @@ export function msg(name, ...args) {
 }
 
 /**
- * Bảng map mã lỗi của service (SR_ErrorCode – Trí) → label hiển thị trên màn hình.
- * Service trả lỗi dạng { sku, code, params }: params đã định dạng sẵn để hiển thị
- * (tên tiếng Việt, ngày dd/MM/yyyy) và đúng thứ tự {0}, {1}, {2} ghi bên cạnh.
- * Mã có dấu (*) chưa có trong SR_ErrorCode: tên đặt tạm, chờ Dũng xác nhận.
- * MISSING_FIELD, INVALID_VALUE, SKU_NOT_IN_ORDER, REQUEST_NOT_FOUND: Phụ lục F không có câu,
- * nên dùng message Apex gửi về (xem msgFromError).
+ * Bảng map mã lỗi của service (SR_ErrorCode, SR_StatusMachine – Dev A) → label hiển thị trên màn hình.
+ * Service trả lỗi dạng SR_ErrorDetailDTO / SR_ActionResultDTO { sku, code, params, message }.
+ * params (nếu có) phải đúng thứ tự {0}, {1}, {2} của label; màn hình tự điền params khi biết
+ * (vd D.1 điền tên sản phẩm cho MSG-02 / 04). Mã không có ở đây (MISSING_FIELD, INVALID_VALUE,
+ * FORBIDDEN, SKU_NOT_IN_ORDER, VALIDATION_FAILED…) dùng message Apex gửi về (xem msgFromError).
  */
 export const ERROR_LABELS = Object.freeze({
-    // Tạo yêu cầu – createRequests
-    NOT_RETURNABLE: 'SR_MSG_03', // 
+    // Tạo yêu cầu – SR_ReturnRequestService.previewCreate / createRequests
+    NOT_RETURNABLE: 'SR_MSG_03',
     RETURN_WINDOW_EXPIRED: 'SR_MSG_02',
-    QUANTITY_EXCEEDED: 'SR_MSG_04', 
-    ZERO_REFUND_RATE: 'SR_MSG_05', 
-    NO_LINES_SELECTED: 'SR_MSG_06',
+    QUANTITY_EXCEEDED: 'SR_MSG_04',
     ORDER_NOT_FOUND: 'SR_ERR_ORDER_NOT_FOUND',
-    SELF_APPROVAL: 'SR_MSG_10', 
-    REJECTION_REASON_REQUIRED: 'SR_MSG_12', 
-    CONCURRENT_UPDATE: 'SR_MSG_13', 
-    NOT_APPROVER: 'SR_ERR_NOT_APPROVER', 
-    INVALID_TRANSITION: 'SR_MSG_20', 
-    INSPECTION_NOTE_REQUIRED: 'SR_MSG_21', // (*) []
-    INSPECTION_INCOMPLETE: 'SR_MSG_22', // (*) []
+    // Duyệt / đổi trạng thái – SR_ApprovalService.decide, SR_StatusMachine.change
+    REJECTION_REASON_REQUIRED: 'SR_MSG_12',
+    STALE_RECORD: 'SR_MSG_13',
+    INVALID_STATUS_TRANSITION: 'SR_MSG_20',
     // Lỗi không lường trước
     INTERNAL_ERROR: 'SR_MSG_90'
 });
+
+const PLACEHOLDER = /\{\d+\}/;
 
 /**
  * Đổi 1 lỗi của service thành câu hiển thị.
  * Nhận { code, params, message } hoặc chuỗi. Thứ tự ưu tiên:
  *   1. mã có trong ERROR_LABELS → label theo mã, thay params;
+ *      label cần tham số mà không có params thì dùng message Apex gửi về (tránh hiện "{0}" trống);
  *   2. mã chưa có label → message Apex gửi về;
  *   3. không có cả hai → MSG-90 kèm mã lỗi, để người dùng báo hỗ trợ.
  * msgFromError({ code: 'QUANTITY_EXCEEDED', params: ['Nồi chiên 5L', 1] })
@@ -169,7 +166,10 @@ export function msgFromError(error) {
         } else if (error.params !== undefined && error.params !== null) {
             params = [error.params];
         }
-        return msg(labelName, ...params);
+        const needsParams = PLACEHOLDER.test(LABELS[labelName]);
+        if (!needsParams || params.length > 0 || !error.message) {
+            return msg(labelName, ...params);
+        }
     }
     if (error.message) {
         return String(error.message);

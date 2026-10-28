@@ -1,0 +1,110 @@
+<template>
+    <template lwc:if={isVisible}>
+        <lightning-card title="Kiểm định hàng trả" icon-name="standard:task">
+            <div class="slds-p-horizontal_medium">
+                <!-- Khách portal lỡ vào trang nội bộ: báo Unauthorized, có nút về Portal -->
+                <template lwc:if={data.unauthorized}>
+                    <p class="slds-text-color_error slds-m-bottom_small">{unauthorizedMessage}</p>
+                    <template lwc:if={data.portalUrl}>
+                        <lightning-button
+                            variant="brand"
+                            label="Về trang Portal"
+                            onclick={handleBackToPortal}
+                        ></lightning-button>
+                    </template>
+                </template>
+                <template lwc:if={errorMessage}>
+                    <p class="slds-text-color_error slds-m-bottom_small">{errorMessage}</p>
+                </template>
+                <template lwc:if={isBusy}>
+                    <lightning-spinner alternative-text="Đang xử lý" size="small"></lightning-spinner>
+                </template>
+
+                <template lwc:if={hasLines}>
+                    <div class="slds-scrollable_x">
+                        <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+                            <thead>
+                                <tr class="slds-line-height_reset">
+                                    <th>Sản phẩm</th>
+                                    <th>SL</th>
+                                    <th>Lý do</th>
+                                    <th>Tình trạng khai báo</th>
+                                    <th>Kết quả</th>
+                                    <th>Tình trạng thực tế</th>
+                                    <th>Ghi chú</th>
+                                    <th class="slds-text-align_right">Tiền hoàn</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template for:each={lines} for:item="line">
+                                    <tr key={line.lineId}>
+                                        <td>{line.productName}<br /><span class="slds-text-body_small">{line.sku}</span></td>
+                                        <td>{line.quantity}</td>
+                                        <td>{line.reasonLabel}</td>
+                                        <td>{line.declaredConditionLabel}</td>
+                                        <td style="min-width: 11rem">
+                                            <lightning-radio-group
+                                                label="Kết quả"
+                                                variant="label-hidden"
+                                                type="button"
+                                                options={resultOptions}
+                                                value={line.inspectionResult}
+                                                disabled={readOnly}
+                                                data-id={line.lineId}
+                                                onchange={handleResult}
+                                            ></lightning-radio-group>
+                                        </td>
+                                        <td style="min-width: 10rem">
+                                            <lightning-combobox
+                                                label="Tình trạng thực tế"
+                                                variant="label-hidden"
+                                                options={conditionOptions}
+                                                value={line.actualCondition}
+                                                disabled={readOnly}
+                                                data-id={line.lineId}
+                                                onchange={handleCondition}
+                                            ></lightning-combobox>
+                                        </td>
+                                        <td style="min-width: 12rem">
+                                            <lightning-input
+                                                label="Ghi chú"
+                                                variant="label-hidden"
+                                                value={line.inspectionNote}
+                                                required={line.noteRequired}
+                                                disabled={readOnly}
+                                                data-id={line.lineId}
+                                                onchange={handleNote}
+                                            ></lightning-input>
+                                        </td>
+                                        <td class="slds-text-align_right">{line.refundText}</td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- D.3 bước 3: tổng ban đầu và tổng thực tế (chỉ cộng dòng Đạt) -->
+                    <div class="slds-m-top_small slds-text-align_right">
+                        <div>Tổng tiền dự kiến ban đầu: {estimatedTotalText}đ</div>
+                        <div>Tổng tiền thực tế: <b>{actualTotalText}đ</b></div>
+                    </div>
+
+                    <template lwc:if={data.canInspect}>
+                        <div class="slds-m-top_small slds-text-align_right">
+                            <!-- D.3 bước 4: chỉ bật khi mọi dòng đã có kết quả, chưa đủ thì nhắc MSG-22 -->
+                            <template lwc:if={showResultHint}>
+                                <span class="slds-text-color_weak slds-m-right_small">{msg22}</span>
+                            </template>
+                            <lightning-button
+                                variant="brand"
+                                label="Hoàn tất kiểm định"
+                                onclick={handleComplete}
+                                disabled={completeDisabled}
+                            ></lightning-button>
+                        </div>
+                    </template>
+                </template>
+            </div>
+        </lightning-card>
+    </template>
+</template>

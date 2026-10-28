@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SharingSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <accessMappings>
+        <accessLevel>Read</accessLevel>
+        <object>Return_Request__c</object>
+        <objectField>Account__c</objectField>
+        <userField>Account</userField>
+    </accessMappings>
+    <description>D.4 Yêu cầu của tôi: khách đăng nhập chỉ thấy yêu cầu có Account__c là Account của mình. Dòng sản phẩm và lịch sử đi theo yêu cầu (master-detail).</description>
+    <name>SR Yêu cầu của tôi</name>
+    <profiles>Customer Community User</profiles>
+</SharingSet>

@@ -1,0 +1,75 @@
+<template>
+    <lightning-card title="Yêu cầu chờ duyệt" icon-name="standard:approval">
+        <div slot="actions">
+            <lightning-button label="Duyệt" variant="brand" onclick={handleApprove} disabled={noSelection}></lightning-button>
+            <lightning-button
+                class="slds-m-left_x-small"
+                label="Từ chối"
+                variant="destructive"
+                onclick={handleReject}
+                disabled={noSelection}
+            ></lightning-button>
+        </div>
+
+        <!-- D.2 Bộ lọc -->
+        <div class="slds-grid slds-wrap slds-gutters slds-p-horizontal_medium slds-m-bottom_small">
+            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                <lightning-combobox label="Trạng thái" options={statusOptions} value={filters.status} data-field="status" onchange={handleFilter}></lightning-combobox>
+            </div>
+            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                <lightning-combobox label="Cửa hàng" options={storeOptions} value={filters.storeId} data-field="storeId" onchange={handleFilter}></lightning-combobox>
+            </div>
+            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                <lightning-input type="date" label="Từ ngày" value={filters.fromDate} data-field="fromDate" onchange={handleFilter}></lightning-input>
+            </div>
+            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                <lightning-input type="date" label="Đến ngày" value={filters.toDate} data-field="toDate" onchange={handleFilter}></lightning-input>
+            </div>
+            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-5 slds-p-top_large">
+                <lightning-input type="checkbox" label="Chỉ yêu cầu giao cho tôi" checked={filters.onlyMine} data-field="onlyMine" onchange={handleFilter}></lightning-input>
+            </div>
+        </div>
+
+        <template lwc:if={errorMessage}>
+            <p class="slds-text-color_error slds-p-horizontal_medium">{errorMessage}</p>
+        </template>
+
+        <!-- Kết quả duyệt hàng loạt: MSG-11 và lý do của từng dòng lỗi -->
+        <template lwc:if={hasDecisionErrors}>
+            <div class="slds-p-horizontal_medium slds-m-bottom_small">
+                <div class="slds-box slds-box_x-small slds-theme_shade">
+                    <p class="slds-text-title_bold">{decisionSummary}</p>
+                    <ul class="slds-list_dotted slds-m-top_xx-small">
+                        <template for:each={decisionErrors} for:item="err">
+                            <li key={err.key} class="slds-text-color_error">{err.text}</li>
+                        </template>
+                    </ul>
+                </div>
+            </div>
+        </template>
+
+        <div class="slds-p-horizontal_medium">
+            <lightning-datatable
+                key-field="id"
+                data={rows}
+                columns={columns}
+                selected-rows={selectedIds}
+                sorted-by={sortedBy}
+                sorted-direction={sortedDirection}
+                onsort={handleSort}
+                onrowselection={handleSelection}
+                is-loading={isLoading}
+            ></lightning-datatable>
+
+            <!-- Phân trang 50 dòng/trang -->
+            <div class="slds-grid slds-grid_align-spread slds-m-top_small">
+                <span>Tổng: {total} yêu cầu</span>
+                <span>
+                    <lightning-button-icon icon-name="utility:chevronleft" alternative-text="Trang trước" onclick={prevPage} disabled={isFirstPage}></lightning-button-icon>
+                    <span class="slds-m-horizontal_small">Trang {pageNumber}/{pageCount}</span>
+                    <lightning-button-icon icon-name="utility:chevronright" alternative-text="Trang sau" onclick={nextPage} disabled={isLastPage}></lightning-button-icon>
+                </span>
+            </div>
+        </div>
+    </lightning-card>
+</template>

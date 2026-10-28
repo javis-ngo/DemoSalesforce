@@ -1,0 +1,139 @@
+<template>
+    <lightning-quick-action-panel header="Tạo yêu cầu trả hàng">
+        <template lwc:if={isLoading}>
+            <lightning-spinner alternative-text="Đang tải" size="small"></lightning-spinner>
+        </template>
+        <template lwc:if={loadError}>
+            <p class="slds-text-color_error">{loadError}</p>
+        </template>
+
+        <template lwc:if={info}>
+            <!-- D.1 bước 1: thông tin đơn -->
+            <div class="slds-grid slds-wrap slds-m-bottom_small">
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-3 slds-p-vertical_xx-small">Số đơn: <b>{info.orderNumber}</b></div>
+                
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-3 slds-p-vertical_xx-small slds-p-right_small">
+                    <lightning-input label="Khách hàng" value={info.customerName} read-only></lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-3 slds-p-vertical_xx-small slds-p-right_small">
+                    <lightning-input label="SĐT" value={info.customerPhone} read-only></lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-3 slds-p-vertical_xx-small slds-p-right_small">
+                    <lightning-input label="Ngày mua" value={purchaseDateText} read-only></lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-3 slds-p-vertical_xx-small slds-p-right_small">
+                    <lightning-input label="Ngày giao" value={deliveryDateText} read-only></lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-3 slds-p-vertical_xx-small slds-p-right_small">
+                    <lightning-input label="Cửa hàng" value={info.storeName} read-only></lightning-input>
+                </div>
+            </div>
+
+            <!-- D.1 bước 2, 3: bảng sản phẩm; dòng không trả được thì mờ, kèm lý do, không nhập được -->
+            <div class="slds-scrollable_x">
+                <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th scope="col">Sản phẩm</th>
+                            <th scope="col">SKU</th>
+                            <th scope="col">Ngành hàng</th>
+                            <th scope="col" class="slds-text-align_right">SL mua</th>
+                            <th scope="col" class="slds-text-align_right">Đã trả</th>
+                            <th scope="col">Hạn đổi trả</th>
+                            <th scope="col">SL trả</th>
+                            <th scope="col">Lý do</th>
+                            <th scope="col">Tình trạng</th>
+                            <th scope="col" class="slds-text-align_right">Tiền hoàn dự kiến</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template for:each={lines} for:item="line">
+                            <tr key={line.orderItemId} class={line.rowClass}>
+                                <td class="slds-cell-wrap sr-col_product">
+                                    <div>{line.productName}</div>
+                                    <template lwc:if={line.lockText}>
+                                        <div class="slds-text-body_small sr-text_reason">{line.lockText}</div>
+                                    </template>
+                                    <template lwc:if={line.error}>
+                                        <div class="slds-text-color_error slds-text-body_small">{line.error}</div>
+                                    </template>
+                                    <template lwc:if={line.hint}>
+                                        <div class="slds-text-color_weak slds-text-body_small">{line.hint}</div>
+                                    </template>
+                                </td>
+                                <td>{line.sku}</td>
+                                <td>{line.category}</td>
+                                <td class="slds-text-align_right">{line.purchasedQuantity}</td>
+                                <td class="slds-text-align_right">{line.previouslyReturnedQuantity}</td>
+                                <td>{line.deadlineText}</td>
+                                <td class="sr-col_qty">
+                                    <lightning-input
+                                        type="number"
+                                        label="SL trả"
+                                        variant="label-hidden"
+                                        min="0"
+                                        step="1"
+                                        value={line.qty}
+                                        disabled={line.locked}
+                                        data-id={line.orderItemId}
+                                        onchange={handleQty}
+                                    ></lightning-input>
+                                </td>
+                                <td class="sr-col_select">
+                                    <lightning-combobox
+                                        label="Lý do"
+                                        variant="label-hidden"
+                                        placeholder="Chọn lý do"
+                                        options={reasonOptions}
+                                        value={line.reason}
+                                        disabled={line.locked}
+                                        data-id={line.orderItemId}
+                                        onchange={handleReason}
+                                    ></lightning-combobox>
+                                </td>
+                                <td class="sr-col_select">
+                                    <lightning-combobox
+                                        label="Tình trạng"
+                                        variant="label-hidden"
+                                        placeholder="Chọn tình trạng"
+                                        options={conditionOptions}
+                                        value={line.condition}
+                                        disabled={line.locked}
+                                        data-id={line.orderItemId}
+                                        onchange={handleCondition}
+                                    ></lightning-combobox>
+                                </td>
+                                <td class="slds-text-align_right">{line.refundText}</td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- D.1 bước 4: tổng tiền và cấp duyệt dự kiến (Apex tính qua previewLevel) -->
+            <div class="slds-m-top_small slds-text-align_right">
+                <div>Tổng tiền hoàn dự kiến: <b>{totalText}</b></div>
+                <div>Cấp duyệt dự kiến: <b>{levelText}</b></div>
+            </div>
+
+            <template for:each={submitErrors} for:item="err">
+                <p key={err.key} class="slds-text-color_error slds-m-top_x-small">{err.text}</p>
+            </template>
+        </template>
+
+        <div slot="footer">
+            <template lwc:if={showNoLineHint}>
+                <span class="slds-text-color_weak slds-m-right_small">{noLineMessage}</span>
+            </template>
+            <lightning-button label="Đóng" onclick={handleClose}></lightning-button>
+            <!-- D.1 bước 5: chỉ bật khi có ít nhất 1 dòng SL trả > 0 -->
+            <lightning-button
+                class="slds-m-left_x-small"
+                variant="brand"
+                label="Tạo yêu cầu"
+                disabled={submitDisabled}
+                onclick={handleSubmit}
+            ></lightning-button>
+        </div>
+    </lightning-quick-action-panel>
+</template>

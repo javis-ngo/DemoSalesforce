@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Trang chi tiết yêu cầu trong app SmartReturn</comment>
+        <content>SR_Return_Request_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Return_Request__c</pageOrSobjectType>
+    </actionOverrides>
+    <brand>
+        <headerColor>#0176D3</headerColor>
+        <shouldOverrideOrgTheme>false</shouldOverrideOrgTheme>
+    </brand>
+    <description>SmartReturn – yêu cầu đổi trả: tạo tại quầy, duyệt, kiểm định, theo dõi hoàn tiền.</description>
+    <formFactors>Small</formFactors>
+    <formFactors>Large</formFactors>
+    <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
+    <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
+    <isNavTabPersistenceDisabled>false</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
+    <label>SmartReturn</label>
+    <navType>Standard</navType>
+    <tabs>Return_Request__c</tabs>
+    <tabs>SR_Approval_Workspace</tabs>
+    <tabs>SR_Customer_Search</tabs>
+    <tabs>standard-Order</tabs>
+    <tabs>Store__c</tabs>
+    <uiType>Lightning</uiType>
+</CustomApplication>

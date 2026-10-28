@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>68.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>SR Tra cứu yêu cầu (Portal)</masterLabel>
+    <targets>
+        <target>lightningCommunity__Page</target>
+        <target>lightningCommunity__Default</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightningCommunity__Default">
+            <property name="title" type="String" label="Tiêu đề khung tra cứu" default="Tra cứu yêu cầu đổi trả"/>
+            <property name="showProducts" type="Boolean" label="Hiện danh sách sản phẩm" default="false"/>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

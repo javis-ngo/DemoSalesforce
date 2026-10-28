@@ -1,0 +1,20 @@
+.sr-row_locked td {
+    color: #747474;
+    background-color: #f3f3f3;
+}
+
+.sr-text_reason {
+    color: #ba0517;
+}
+
+.sr-col_product {
+    min-width: 12rem;
+}
+
+.sr-col_qty {
+    min-width: 5.5rem;
+}
+
+.sr-col_select {
+    min-width: 11rem;
+}

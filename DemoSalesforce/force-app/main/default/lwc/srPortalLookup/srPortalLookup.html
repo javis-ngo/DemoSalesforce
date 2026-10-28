@@ -1,0 +1,43 @@
+<template>
+    <lightning-card title={title}>
+        <div class="slds-p-horizontal_medium">
+            <div class="slds-grid slds-wrap slds-gutters">
+                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                    <lightning-input label="Mã yêu cầu" placeholder="RR-2610-00015" value={requestNumber} onchange={handleCode}></lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                    <lightning-input label="4 số cuối số điện thoại" max-length="4" value={phoneLast4} onchange={handlePhone}></lightning-input>
+                </div>
+            </div>
+            <div class="slds-m-top_small">
+                <lightning-button variant="brand" label="Tra cứu" onclick={handleLookup} disabled={isLoading}></lightning-button>
+            </div>
+
+            <template lwc:if={message}>
+                <p class="slds-text-color_error slds-m-top_small">{message}</p>
+            </template>
+
+            <template lwc:if={result}>
+                <div class="slds-m-top_medium">
+                    <p>Yêu cầu <b>{result.requestNumber}</b> – Trạng thái hiện tại: <b>{result.statusLabel}</b></p>
+
+                    <h3 class="slds-text-heading_small slds-m-top_small">Lịch sử trạng thái</h3>
+                    <ul class="slds-list_dotted">
+                        <template for:each={result.history} for:item="h">
+                            <li key={h.key}>{h.changedAt} – {h.statusLabel}</li>
+                        </template>
+                    </ul>
+
+                    <template lwc:if={showProducts}>
+                        <h3 class="slds-text-heading_small slds-m-top_small">Sản phẩm</h3>
+                        <ul class="slds-list_dotted">
+                            <template for:each={result.products} for:item="p">
+                                <li key={p.key}>{p.name} × {p.quantity}</li>
+                            </template>
+                        </ul>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>
