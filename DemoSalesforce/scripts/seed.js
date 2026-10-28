@@ -31,11 +31,25 @@ const SEED_STEPS = [
 const SKIP_HINT = 'Bỏ qua bước này, chạy tiếp. Chạy lại "npm run seed" khi Đức đã deploy SR_SharingService.';
 const GROUP_STEP = SEED_STEPS[2];
 
+// Debug log mã hóa ký tự đặc biệt trong System.debug: '|' thành '&#124;', '"' thành '&quot;'...
+function decodeEntities(text) {
+    return text
+        .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+}
+
 // Các dòng System.debug('SEED | ...') trong debug log
 function seedLines(logs) {
     return String(logs || '')
         .split('\n')
-        .filter((line) => line.includes('|USER_DEBUG|') && line.includes('SEED |'))
+        .filter((line) => line.includes('|USER_DEBUG|'))
+        .map(decodeEntities)
+        .filter((line) => line.includes('SEED |'))
         .map((line) => line.substring(line.indexOf('SEED |')));
 }
 

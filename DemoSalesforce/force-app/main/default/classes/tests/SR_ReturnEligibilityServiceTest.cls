@@ -100,6 +100,21 @@ private class SR_ReturnEligibilityServiceTest {
         );
     }
 
+    // Provider không có chính sách ngành hàng: getCategoryPolicy() không thấy trong override thì đọc
+    // SR_Category_Policy__mdt thật, mà org đã có đủ 6 ngành, nên chỉ giả lập được "thiếu chính sách"
+    // bằng cách bỏ cả nguồn metadata
+    private class NoCategoryPolicyProvider implements SR_Config.Provider {
+        public SR_Setting__mdt getSetting(String developerName) {
+            return SR_Setting__mdt.getInstance(developerName);
+        }
+        public Map<String, SR_Category_Policy__mdt> getCategoryPolicies() {
+            return new Map<String, SR_Category_Policy__mdt>();
+        }
+        public Map<String, SR_Refund_Rate__mdt> getRefundRates() {
+            return SR_Refund_Rate__mdt.getAll();
+        }
+    }
+
     private static SR_ReturnableLineDTO lineDto(
         Decimal returnableQuantity,
         Date deadline
@@ -511,6 +526,7 @@ private class SR_ReturnEligibilityServiceTest {
     @IsTest
     static void populateLine_missingFamilyPolicy_returnsConfigurationError() {
         SR_TestDataFactory.resetConfig();
+        SR_Config.setProvider(new NoCategoryPolicyProvider());
         SR_Config.setCategoryPolicyOverrides(
             new Map<String, SR_CategoryPolicy>{
                 SR_TestDataFactory.FAMILY_PHONE => policy(

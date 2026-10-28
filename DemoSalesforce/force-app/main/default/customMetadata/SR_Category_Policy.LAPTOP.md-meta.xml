@@ -12,7 +12,7 @@
     </values>
     <values>
         <field>Product_Family__c</field>
-        <value xsi:type="xsd:string">LAPTOP</value>
+        <value xsi:type="xsd:string">Laptop</value>
     </values>
     <values>
         <field>Return_Window_Days__c</field>
