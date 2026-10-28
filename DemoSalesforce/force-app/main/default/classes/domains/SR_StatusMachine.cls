@@ -1,4 +1,5 @@
-public with sharing class SR_StatusMachine {        
+// User-facing services enforce sharing; scheduled maintenance batches use system context.
+public inherited sharing class SR_StatusMachine {
     public static final String STATUS_NEW = 'NEW';        
     public static final String PENDING_APPROVAL = 'PENDING_APPROVAL';        
     public static final String AWAITING_GOODS = 'AWAITING_GOODS';        
@@ -84,6 +85,11 @@ public with sharing class SR_StatusMachine {
             }        
             if (fromStatus != toStatus) {        
                 currentRecord.Status__c = toStatus;        
+                if (toStatus == AWAITING_GOODS) {
+                    currentRecord.Goods_Due_Date__c = System.now().addDays(
+                        SR_Config.goodsDueDays()
+                    );
+                }
                 if (toStatus == REJECTED) {        
                     currentRecord.Rejection_Reason__c = input.rejectionReason.trim();        
                 }        
