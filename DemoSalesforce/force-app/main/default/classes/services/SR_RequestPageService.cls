@@ -63,8 +63,10 @@ public with sharing class SR_RequestPageService {
         data.status = r.Status__c;
         data.versionToken = SR_UiUtil.versionTokenOf(r.LastModifiedDate);
         data.canInspect = SR_ReturnRequestDomain.canInspect(r, r.Return_Request_Lines__r);
+        Map<Id, Return_Request_Line__c> products = SR_ReturnRequestSelector.selectProductInfo(
+            new Map<Id, Return_Request_Line__c>(r.Return_Request_Lines__r).keySet());
         for (Return_Request_Line__c l : r.Return_Request_Lines__r) {
-            data.lines.add(toLine(l));
+            data.lines.add(toLine(l, products.get(l.Id)));
         }
         return data;
     }
@@ -142,12 +144,13 @@ public with sharing class SR_RequestPageService {
         throw SR_UiUtil.auraException(String.isBlank(message) ? System.Label.SR_MSG_90 : message);
     }
 
-    private static InspectionLine toLine(Return_Request_Line__c l) {
+    // product: dòng chỉ có Order_Product__r.Product2 (SR_ReturnRequestSelector.selectProductInfo), có thể null
+    private static InspectionLine toLine(Return_Request_Line__c l, Return_Request_Line__c product) {
         Boolean inspected = SR_ReturnRequestDomain.isInspected(l);
         InspectionLine line = new InspectionLine();
         line.lineId = l.Id;
-        line.productName = l.Order_Product__r?.Product2?.Name;
-        line.sku = l.Order_Product__r?.Product2?.ProductCode;
+        line.productName = product?.Order_Product__r?.Product2?.Name;
+        line.sku = product?.Order_Product__r?.Product2?.ProductCode;
         line.quantity = l.Quantity__c;
         line.reason = l.Reason__c;
         line.declaredCondition = l.Declared_Condition__c;
