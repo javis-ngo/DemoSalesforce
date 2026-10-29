@@ -52,7 +52,6 @@ public without sharing class SR_EscalateApprovalBatch
             ));
             requestsForUpdate.add(new Return_Request__c(
                 Id = requestRecord.Id,
-                Name = requestRecord.Name,
                 Assigned_Approver__c = regionalManagerId
             ));
         }
