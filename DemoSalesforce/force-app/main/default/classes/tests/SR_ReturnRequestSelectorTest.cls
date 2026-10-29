@@ -9,7 +9,7 @@ private class SR_ReturnRequestSelectorTest {
     static void setup() {
         List<Return_Request__c> requests = new List<Return_Request__c>();
         for (Integer i = 1; i <= 5; i++) {
-            requests.add(new Return_Request__c(Name = 'RR-TEST-' + i, Channel__c = 'COUNTER', Status__c = 'NEW'));
+            requests.add(new Return_Request__c(Channel__c = 'COUNTER', Status__c = 'NEW'));
         }
         insert requests;
     }
@@ -37,6 +37,8 @@ private class SR_ReturnRequestSelectorTest {
         Assert.isTrue(forInspection.Return_Request_Lines__r.isEmpty(), 'Yêu cầu test không có dòng');
         Assert.areEqual(requestId, forPortal.Id);
         Assert.areEqual('NEW', SR_ReturnRequestSelector.selectById(requestId).Status__c);
+        Assert.isTrue(SR_ReturnRequestSelector.selectProductInfo(new Set<Id>()).isEmpty());
+        Assert.isTrue(SR_ReturnRequestSelector.selectProductInfo(null).isEmpty());
     }
 
     // Hàng chờ duyệt: tổng số dòng lấy luôn từ cursor, không cần query COUNT riêng
