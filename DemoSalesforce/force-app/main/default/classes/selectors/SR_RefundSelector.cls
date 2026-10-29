@@ -3,6 +3,9 @@
  * Kế toán hoàn tay (B7), PayHub callback (B9).
  *  - "inherited sharing": SR_RefundService chạy without sharing vì Queueable chạy dưới quyền người bấm
  *    "Hoàn tất kiểm định" (nhân viên cửa hàng), người này không chắc xem được các field hoàn tiền.
+ *  - Mọi query ghi rõ WITH SYSTEM_MODE: API 68 không ghi mode thì chạy USER_MODE, mà người chạy Queueable
+ *    (CHT/QLV/Kế toán, license Salesforce Platform) không có quyền object Order → "Didn't understand relationship
+ *    'Order__r'", yêu cầu kẹt ở REFUND_PROCESSING. SYSTEM_MODE vẫn theo sharing của class gọi (đều without sharing).
  * Owner: Dev B
  */
 public inherited sharing class SR_RefundSelector {
@@ -21,6 +24,7 @@ public inherited sharing class SR_RefundSelector {
               AND Status__c = :SR_RefundDomain.STATUS_REFUND_PROCESSING
               AND PayHub_Refund_Id__c = null
               AND (Next_Retry_At__c = null OR Next_Retry_At__c <= :now)
+            WITH SYSTEM_MODE
         ];
     }
 
@@ -35,6 +39,7 @@ public inherited sharing class SR_RefundSelector {
               AND PayHub_Refund_Id__c = null
               AND Next_Retry_At__c != null
               AND Next_Retry_At__c <= :now
+            WITH SYSTEM_MODE
             LIMIT :maxRows
             FOR UPDATE
         ];
@@ -46,6 +51,7 @@ public inherited sharing class SR_RefundSelector {
             SELECT Id, Name, Status__c, Actual_Refund__c, PayHub_Refund_Id__c, Store__r.Store_Code__c
             FROM Return_Request__c
             WHERE Id = :requestId
+            WITH SYSTEM_MODE
             LIMIT 1
             FOR UPDATE
         ];
@@ -57,6 +63,7 @@ public inherited sharing class SR_RefundSelector {
             SELECT Id, Name, Status__c, Actual_Refund__c, PayHub_Refund_Id__c, Store__r.Store_Code__c
             FROM Return_Request__c
             WHERE Name = :requestNumber
+            WITH SYSTEM_MODE
             LIMIT 1
             FOR UPDATE
         ];
@@ -65,7 +72,7 @@ public inherited sharing class SR_RefundSelector {
     // B6: job lịch thử lại đang có (để hủy trước khi lên lịch lại)
     public static List<Id> selectScheduledJobIds(List<String> jobNames) {
         List<Id> ids = new List<Id>();
-        for (CronTrigger ct : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name IN :jobNames]) {
+        for (CronTrigger ct : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name IN :jobNames WITH SYSTEM_MODE]) {
             ids.add(ct.Id);
         }
         return ids;
@@ -74,7 +81,7 @@ public inherited sharing class SR_RefundSelector {
     // FR-14: Public Group của Kế toán; null nếu chưa tạo (scripts/apex/seed-3-groups.apex)
     public static Id selectGroupId(String developerName) {
         List<Group> groups = [
-            SELECT Id FROM Group WHERE DeveloperName = :developerName AND Type = 'Regular' LIMIT 1
+            SELECT Id FROM Group WHERE DeveloperName = :developerName AND Type = 'Regular' WITH SYSTEM_MODE LIMIT 1
         ];
         return groups.isEmpty() ? null : groups[0].Id;
     }
@@ -82,7 +89,7 @@ public inherited sharing class SR_RefundSelector {
     // Custom Notification Type; null nếu chưa deploy
     public static Id selectNotificationTypeId(String developerName) {
         List<CustomNotificationType> types = [
-            SELECT Id FROM CustomNotificationType WHERE DeveloperName = :developerName LIMIT 1
+            SELECT Id FROM CustomNotificationType WHERE DeveloperName = :developerName WITH SYSTEM_MODE LIMIT 1
         ];
         return types.isEmpty() ? null : types[0].Id;
     }

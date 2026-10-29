@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
     <deploymentStatus>Deployed</deploymentStatus>
-    <description>Thông báo realtime kết quả hoàn tiền cho màn hình duyệt CHT/QLV (FR-09). Luôn phát, không phụ thuộc công tắc B.4. Publish After Commit (BR-15). Owner: Dev B</description>
+    <description>Thông báo realtime cho màn hình duyệt CHT/QLV: kết quả hoàn tiền (FR-09) và yêu cầu vừa tạo / cập nhật để bảng tự làm mới (Change_Type__c, FR-08 D.2). Luôn phát, không phụ thuộc công tắc B.4. Publish After Commit (BR-15). Owner: Dev B</description>
     <eventType>HighVolume</eventType>
     <label>SR UI Notice</label>
     <pluralLabel>SR UI Notices</pluralLabel>

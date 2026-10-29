@@ -29,6 +29,9 @@ const ROWS = [
     { id: 'a00000000000001AAA', requestNumber: 'RR-2610-00001', versionToken: '1761094800000' },
     { id: 'a00000000000002AAA', requestNumber: 'RR-2610-00002', versionToken: '1761098400000' }
 ];
+const NEW_ROW = { id: 'a00000000000003AAA', requestNumber: 'RR-2610-00003', versionToken: '1761102000000' };
+const STORE = { label: 'HCM-012 – Quận 1', value: 'a0S000000000001AAA', storeCode: 'HCM-012' };
+const OTHER_STORE_ID = 'a0S000000000002AAA';
 
 // Chờ Apex giả lập trả kết quả và component render lại (vài vòng microtask)
 async function flushPromises(rounds = 5) {
@@ -48,6 +51,36 @@ function collectToasts(element) {
     const toasts = [];
     element.addEventListener('lightning__showtoast', (event) => toasts.push(event.detail));
     return toasts;
+}
+
+function datatable(element) {
+    return element.shadowRoot.querySelector('lightning-datatable');
+}
+
+// Bật empApi giả lập; trả về hàm gửi 1 event SR_UI_Notice__e vào component
+function mockRealtime() {
+    let handler;
+    isEmpEnabled.mockResolvedValue(true);
+    subscribe.mockImplementation((channel, replayId, callback) => {
+        handler = callback;
+        return Promise.resolve({ channel });
+    });
+    return (payload) => handler({ data: { payload } });
+}
+
+// Thông báo thay đổi do ReturnRequestTrigger phát (SR_EventPublisher.publishChanges)
+function change(type, requestId, status, oldStatus, storeId = STORE.value) {
+    return { Change_Type__c: type, Request_Id__c: requestId, Store_Id__c: storeId, Status__c: status, Old_Status__c: oldStatus };
+}
+
+// Mở màn hình của CHT cửa hàng STORE, chờ lần tải đầu
+async function renderWithRealtime() {
+    jest.useFakeTimers();
+    const send = mockRealtime();
+    const element = render();
+    getMyStores.emit([STORE]);
+    await flushPromises();
+    return { element, send };
 }
 
 describe('c-sr-approval-workspace', () => {
@@ -133,5 +166,77 @@ describe('c-sr-approval-workspace', () => {
         errorHandler({ error: 'connection lost' });
         jest.advanceTimersByTime(5000);
         expect(subscribe).toHaveBeenCalledTimes(2);
+    });
+
+    it('yêu cầu mới của cửa hàng mình hiện trên bảng không cần tải lại trang, có đánh dấu "Mới"', async () => {
+        const { element, send } = await renderWithRealtime();
+        expect(getQueue).toHaveBeenCalledTimes(1);
+
+        let resolveRefresh;
+        getQueue.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveRefresh = resolve;
+            })
+        );
+        // Tạo rồi cập nhật ngay trong cùng giao dịch: gom lại, chỉ tải 1 lần sau 1 giây
+        send(change('CREATED', NEW_ROW.id, 'NEW'));
+        send(change('UPDATED', NEW_ROW.id, 'PENDING_APPROVAL', 'NEW'));
+        jest.advanceTimersByTime(999);
+        expect(getQueue).toHaveBeenCalledTimes(1);
+        jest.advanceTimersByTime(1);
+        await flushPromises();
+        expect(getQueue).toHaveBeenCalledTimes(2);
+        // Tải ngầm: không hiện spinner trên bảng
+        expect(datatable(element).isLoading).toBe(false);
+
+        resolveRefresh({ rows: [...ROWS, NEW_ROW], total: 3, pageSize: 50 });
+        await flushPromises();
+        const rows = datatable(element).data;
+        expect(rows.map((r) => r.changeLabel)).toEqual([undefined, undefined, 'Mới']);
+        expect(rows[2].changeIcon).toBe('utility:new');
+        const spans = [...element.shadowRoot.querySelectorAll('span')].map((s) => s.textContent);
+        expect(spans).toContain('Tổng: 3 yêu cầu');
+    });
+
+    it('bỏ qua thay đổi của cửa hàng khác hoặc không làm khác bảng đang xem', async () => {
+        const { send } = await renderWithRealtime();
+
+        send(change('CREATED', NEW_ROW.id, 'PENDING_APPROVAL', undefined, OTHER_STORE_ID));
+        // Cửa hàng mình nhưng không có trên bảng, trạng thái cũ / mới đều khác bộ lọc "Chờ duyệt"
+        send(change('UPDATED', NEW_ROW.id, 'REFUND_PROCESSING', 'INSPECTING'));
+        jest.advanceTimersByTime(1000);
+        await flushPromises();
+        expect(getQueue).toHaveBeenCalledTimes(1);
+
+        // Rời bộ lọc (vừa được duyệt ở máy khác) dù không ở trang này: tải lại để cập nhật tổng số
+        send(change('UPDATED', NEW_ROW.id, 'AWAITING_GOODS', 'PENDING_APPROVAL'));
+        jest.advanceTimersByTime(1000);
+        await flushPromises();
+        expect(getQueue).toHaveBeenCalledTimes(2);
+    });
+
+    it('tự làm mới giữ dòng đang chọn, bỏ chọn dòng vừa bị người khác sửa', async () => {
+        const { element, send } = await renderWithRealtime();
+        datatable(element).dispatchEvent(new CustomEvent('rowselection', { detail: { selectedRows: ROWS } }));
+
+        const edited = { ...ROWS[1], versionToken: '1761105600000' };
+        getQueue.mockResolvedValue({ rows: [ROWS[0], edited], total: 2, pageSize: 50 });
+        send(change('UPDATED', edited.id, 'PENDING_APPROVAL', 'PENDING_APPROVAL'));
+        jest.advanceTimersByTime(1000);
+        await flushPromises();
+
+        expect(datatable(element).selectedRows).toEqual([ROWS[0].id]);
+        expect(datatable(element).data[1].changeLabel).toBe('Vừa cập nhật');
+
+        // Chỉ duyệt dòng chưa đổi; sau khi duyệt bảng tải lại và bỏ đánh dấu
+        decide.mockResolvedValue({ succeeded: 1, total: 1, errors: [] });
+        [...element.shadowRoot.querySelectorAll('lightning-button')].find((b) => b.label === 'Duyệt').click();
+        await flushPromises(10);
+        expect(decide).toHaveBeenCalledWith({
+            itemsJson: JSON.stringify([{ requestId: ROWS[0].id, versionToken: ROWS[0].versionToken }]),
+            approve: true,
+            reason: null
+        });
+        expect(datatable(element).data.map((r) => r.changeLabel)).toEqual([undefined, undefined]);
     });
 });
