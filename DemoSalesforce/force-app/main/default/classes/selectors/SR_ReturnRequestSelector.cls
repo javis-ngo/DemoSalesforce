@@ -79,17 +79,32 @@ public inherited sharing class SR_ReturnRequestSelector {
         ]);
     }
 
-    // Yêu cầu kèm các dòng để kiểm định; LastModifiedDate để tính versionToken cho SR_InspectionService
+    // Yêu cầu kèm các dòng để kiểm định; LastModifiedDate để tính versionToken cho SR_InspectionService.
+    // Không lấy Order_Product__r.Product2 ở đây: license Salesforce Platform không đọc được OrderItem/Product2,
+    // USER_MODE sẽ báo lỗi "Didn't understand relationship" → tên/mã sản phẩm lấy qua selectProductInfo.
     public static Return_Request__c selectForInspection(Id requestId) {
         return [
             SELECT Id, Name, Status__c, LastModifiedDate,
-                   (SELECT Id, Order_Product__r.Product2.Name, Order_Product__r.Product2.ProductCode, Quantity__c,
+                   (SELECT Id, Quantity__c,
                            Reason__c, Declared_Condition__c, Actual_Condition__c, Estimated_Refund__c, Actual_Refund__c,
                            Inspection_Result__c, Inspection_Note__c
                     FROM Return_Request_Lines__r ORDER BY Name)
             FROM Return_Request__c WHERE Id = :requestId
             WITH USER_MODE
         ];
+    }
+
+    // Tên + mã sản phẩm của các dòng, chỉ để hiển thị. SYSTEM_MODE vì người dùng license Platform/Identity
+    // không có quyền Order/Product2; sharing vẫn theo class gọi. Chỉ gọi với lineId đã đọc được ở USER_MODE.
+    public static Map<Id, Return_Request_Line__c> selectProductInfo(Set<Id> lineIds) {
+        if (lineIds == null || lineIds.isEmpty()) {
+            return new Map<Id, Return_Request_Line__c>();
+        }
+        return new Map<Id, Return_Request_Line__c>([
+            SELECT Id, Order_Product__r.Product2.Name, Order_Product__r.Product2.ProductCode
+            FROM Return_Request_Line__c WHERE Id IN :lineIds
+            WITH SYSTEM_MODE
+        ]);
     }
 
     // ---------- Portal: khách đăng nhập (luôn with sharing) ----------
