@@ -59,18 +59,20 @@ Phần lớn đã có câu trả lời ngầm trong chính BRD:
 
 ## 3. Thiết kế dùng chung (chốt trong sáng N1)
 
-Tên dưới đây là đề xuất. Quy ước: Apex tiền tố `SR_`, LWC tiền tố `sr`, API name tiếng Anh, label tiếng Việt. Giá trị picklist dùng đúng chuỗi trong JSON ở Phụ lục E (`NOT_SATISFIED`, `OPENED`, `INSPECTING`…) để API khỏi phải chuyển đổi; label hiển thị tiếng Việt.
+Tên Apex dùng tiền tố `SR_`, LWC dùng tiền tố `sr`, API name tiếng Anh, label tiếng Việt. Bảng dưới đây phản ánh field trong metadata Salesforce hiện tại; các API name và đặc tính quan trọng được ghi theo metadata. Giá trị picklist dùng đúng chuỗi trong JSON ở Phụ lục E (`NOT_SATISFIED`, `OPENED`, `INSPECTING`…) để API khỏi phải chuyển đổi; label hiển thị tiếng Việt.
 
 ### 3.1 Object
 
 | Object | Field chính | Phục vụ |
 |---|---|---|
-| `Return_Request__c` | Name (Auto Number), Account__c, Order__c, Store__c, Channel__c (COUNTER/POS/APP), External_Request_Id__c (External ID, Unique), Status__c, Estimated_Refund__c / Actual_Refund__c (roll-up từ dòng), Approval_Level__c (AUTO/CHT/QLV), Assigned_Approver__c, Approved_By__c, Submitted_At__c, Approval_Due_At__c, Goods_Due_Date__c, Rejection_Reason__c, Internal_Note__c, PayHub_Refund_Id__c, Refund_Attempts__c, Next_Retry_At__c, Last_Refund_Error__c | BR-01, 06–13, 18 |
-| `Return_Request_Line__c` (master-detail) | Order_Item__c, Product__c, Quantity__c, Unit_Price__c, Reason__c, Declared_Condition__c, Actual_Condition__c, Refund_Rate__c, Estimated_Refund__c, Actual_Refund__c, Inspection_Result__c, Inspection_Note__c | BR-04, 05; FR-10 |
-| `Return_Request_History__c` | Request__c, From_Status__c, To_Status__c, Changed_By__c, Changed_At__c, Note__c | FR-06, NFR-08 |
-| `Integration_Log__c` | Request__c, System__c, Direction__c, Endpoint__c, Request_Body__c, Response_Body__c, Http_Status__c, Duration_Ms__c, Result__c | BR-14 |
-| `Error_Log__c` | Class_Method__c, Message__c, Stack_Trace__c, Record_Id__c, User__c | NFR-09 |
+| `Return_Request__c` | Name (Text; không phải Auto Number), Account__c (Lookup Account), Order__c (Lookup Order), Store__c (Lookup Store__c), Channel__c (Picklist: COUNTER/POS/APP, bắt buộc), Status__c (Picklist, bắt buộc), External_Request_Id__c (Text, Unique; không bật External ID)<br>Estimated_Refund__c / Actual_Refund__c (Summary SUM từ các dòng), Approval_Level__c (AUTO/CHT/QLV), Assigned_Approver__c, Approved_By__c, Submitted_At__c, Approval_Due_At__c, Goods_Due_Date__c<br>Rejection_Reason__c, Internal_Note__c, PayHub_Refund_Id__c, Refund_Attempts__c, Next_Retry_At__c, Last_Refund_Error__c, Inspection_Completed_At__c, Refund_Final_Event_Sent__c, Version_Token__c<br>Approval_Overdue__c / Assigned_To_Me__c (formula checkbox) | BR-01, 06–13, 18 |
+| `Return_Request_Line__c` (Master-Detail với `Return_Request__c`) | Return_Request__c, Order_Product__c (Lookup OrderItem), Product__c (Lookup Product2), Quantity__c, Unit_Price__c, Reason__c<br>Declared_Condition__c, Actual_Condition__c, Refund_Rate__c, Estimated_Refund__c, Actual_Refund_Rate__c, Actual_Refund__c<br>Inspection_Result__c, Inspection_Note__c | BR-04, 05; FR-10 |
+| `Return_Request_History__c` | Return_Request__c (Master-Detail với `Return_Request__c`), From_Status__c, To_Status__c, Changed_By__c (Lookup User)<br>Changed_At__c (bắt buộc, mặc định NOW), Last_Modified_At__c (bắt buộc, mặc định NOW), Note__c, Correlation_Id__c | FR-06, NFR-08 |
+| `Integration_Log__c` | Return_Request__c (Lookup `Return_Request__c`), System__c, Direction__c, Endpoint__c, Request_Body__c, Response_Body__c<br>Http_Status__c, Duration_Ms__c, Result__c, Attempt_No__c, Correlation_Id__c | BR-14 |
+| `Application_Log__c` (đổi tên từ `Error_Log__c`) | Class_Method__c, Message__c, Stack_Trace__c, Record_Id__c, User__c (Lookup User)<br>Context__c, Correlation_Id__c, Level__c | NFR-09 |
 | Account (thêm field) | Risk_Flag__c, Risk_Flag_Updated_At__c | BR-09 |
+
+Lưu ý đối chiếu: `Return_Request__c.Name` hiện là Text nên định dạng mã yêu cầu RR-YYMM-00000 phải được tạo bởi logic ứng dụng nếu vẫn giữ yêu cầu đó; `External_Request_Id__c` là Unique nhưng chưa bật External ID. Dòng sản phẩm dùng API name `Order_Product__c` (không phải `Order_Item__c`); object log lỗi hiện có là `Application_Log__c` (không phải `Error_Log__c`).
 
 Trước các object mới, phải tạo các object/field có sẵn ở Phụ lục A.1 (Store__c, field trên Order, User.Store_Code__c, giá trị Product2.Family).
 
