@@ -3,5 +3,5 @@
     <description>Tìm kiếm khách hàng, đơn hàng, yêu cầu cho CSKH (srCustomerSearch của Dev B)</description>
     <flexiPage>SR_Customer_Search</flexiPage>
     <label>Tìm kiếm CSKH</label>
-    <motif>Custom62: Magnifying Glass</motif>
+    <motif>Custom62: Chalkboard</motif>
 </CustomTab>

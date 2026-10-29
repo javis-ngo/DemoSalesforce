@@ -8,5 +8,5 @@
     </accessMappings>
     <description>D.4 Yêu cầu của tôi: khách đăng nhập chỉ thấy yêu cầu có Account__c là Account của mình. Dòng sản phẩm và lịch sử đi theo yêu cầu (master-detail).</description>
     <name>SR Yêu cầu của tôi</name>
-    <profiles>Customer Community User</profiles>
+    <profiles>customer community user</profiles>
 </SharingSet>
