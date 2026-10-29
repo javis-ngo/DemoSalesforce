@@ -12,6 +12,7 @@
     "test:unit:coverage": "sfdx-lwc-jest --coverage",
     "seed": "node scripts/seed.js",
     "seed:doi-vai": "node scripts/seed.js doi-vai",
+    "seed:import-json": "node scripts/seed.js import-json",
     "prettier": "prettier --write \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
     "prettier:verify": "prettier --check \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
     "prepare": "husky || true",
