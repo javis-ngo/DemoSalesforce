@@ -66,5 +66,16 @@ public with sharing class SR_ReturnRequestTriggerHandler {
             // Mandatory audit data: an error must roll back the parent request insert.
             Database.insert(histories, true, AccessLevel.SYSTEM_MODE);
         }
+
+        // Màn hình duyệt (D.2) tự hiện yêu cầu mới. Publish After Commit: insert rollback thì không gửi.
+        SR_EventPublisher.publishChanges(newRecords, null);
+    }
+
+    public static void afterUpdate(
+        List<Return_Request__c> newRecords,
+        Map<Id, Return_Request__c> oldMap
+    ) {
+        // Màn hình duyệt (D.2) tự làm mới dòng: đổi trạng thái, người duyệt, số tiền...
+        SR_EventPublisher.publishChanges(newRecords, oldMap);
     }
 }
